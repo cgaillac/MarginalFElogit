@@ -17,4 +17,4 @@ RoxygenNote: 7.1.1
 Imports: snowfall, stats, MASS, pracma, R.matlab, abind, dplyr,
         kableExtra, plm, signal, admisc, pglm
 NeedsCompilation: no
-Packaged: 2021-05-31 08:43:01 UTC; chris
+Packaged: 2021-05-31 09:36:45 UTC; chris

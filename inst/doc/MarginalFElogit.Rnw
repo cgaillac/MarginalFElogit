@@ -158,7 +158,7 @@
 
 \begin{Code}
 	library("devtools")
-	install_github('MarginalFElogit','cgaillac')
+	install_github('cgaillac/MarginalFElogit')
 \end{Code}
 
 \medskip
