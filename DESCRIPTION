@@ -1,0 +1,20 @@
+Package: MarginalFElogit
+Type: Package
+Title: Estimation of Average Marginal Effects in Fixed Effect Logit
+        Models
+Version: 0.1.1
+Author: c(person("Laurent", "Davezies", email = "laurent.davezies@ensae.fr", role = c("aut")),
+    person("Xavier", "D'Haultfoeuille", email = "xavier.dhaultfoeuille@ensae.fr", role = c("aut")),
+    person("Louise", "Laage", email = "louise.laage@georgetown.edu", role = c("aut")),
+    person("Christophe", "Gaillac", email = "christophe.gaillac@ensae.fr", role = c("aut", "cre")))
+Maintainer: The package maintainer <christophe.gaillac@ensae.fr>
+Description: We consider inference about average marginal effects (AME) and similar parameters in a panel data fixed effects logit model. It implements the nonparametric estimator of the sharp bounds on the AME and the related confidence intervals on the AME from  Davezies, D'Haultfoeuille, and Laage (2021) <arxiv.org/abs/2105.00879> (DDL).  It also implements the second method proposed in DDL, which does not require any nonparametric estimation but may result in larger confidence intervals.
+License: GPL-3
+Encoding: UTF-8
+Suggests: knitr, rmarkdown
+VignetteBuilder: knitr
+RoxygenNote: 7.1.1
+Imports: snowfall, stats, MASS, pracma, R.matlab, abind, dplyr,
+        kableExtra, plm, signal, admisc, pglm
+NeedsCompilation: no
+Packaged: 2021-05-31 08:43:01 UTC; chris
