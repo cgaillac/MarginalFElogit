@@ -2,7 +2,7 @@ Package: MarginalFElogit
 Type: Package
 Title: Estimation of Average Marginal Effects in Fixed Effect Logit
         Models
-Version: 0.1.1
+Version: 0.2.1
 Author: c(person("Laurent", "Davezies", email = "laurent.davezies@ensae.fr", role = c("aut")),
     person("Xavier", "D'Haultfoeuille", email = "xavier.dhaultfoeuille@ensae.fr", role = c("aut")),
     person("Louise", "Laage", email = "louise.laage@georgetown.edu", role = c("aut")),
@@ -17,4 +17,4 @@ RoxygenNote: 7.1.1
 Imports: snowfall, stats, MASS, pracma, R.matlab, abind, dplyr,
         kableExtra, plm, signal, admisc, pglm
 NeedsCompilation: no
-Packaged: 2021-05-31 09:36:45 UTC; chris
+Packaged: 2021-07-11 07:58:59 UTC; chris

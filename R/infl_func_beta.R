@@ -78,7 +78,7 @@ infl_func_beta <- function(beta,Y, X, Call=NULL){
       J_denom[Tall==ti,t] = V[Tall==ti,t]/denom[Tall==ti];
     }else{
     for( t in seq(1,ti)){
-      V0 = matrix(V[Tall==ti& Call ==ci,1:ti],sum(Tall==ti& Call ==ci),ti)
+      V0 = matrix(V[Tall==ti,1:ti],sum(Tall==ti),ti)
       J_denom[Tall==ti,t] = V[Tall==ti,t]*C_S_fun(S[Tall==ti]-1, matrix(V0[,(1:ti)!=t],sum(Tall==ti),sum((1:ti)!=t)) )/denom[Tall==ti];
     }
     }
@@ -103,8 +103,12 @@ infl_func_beta <- function(beta,Y, X, Call=NULL){
   }else{
 
     nb_clust =length(unique(Call))
+    civals = unique(Call)
+
     info_Fish = 0
-    for(ci in 1: nb_clust){
+    for(ci0 in 1: nb_clust){
+
+      ci = civals[ci0]
       for(ti in grid_T){
         if(ti==1){
           J_denom[Tall==ti & Call ==ci,t] = V[Tall==ti& Call ==ci,t]/denom[Tall==ti& Call ==ci];

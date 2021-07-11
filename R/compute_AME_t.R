@@ -325,9 +325,12 @@ compute_AME_t<- function(Yall,Xall, prop_T, grid_T,n_dist,Tmax,Tall,Tinf,Call1,m
     infl =  term1 + term2
 
 
-    nb_clust =length(unique(Call1))
+    nb_clust =length(unique(Call10))
+    civals = unique(Call10)
+
     et = matrix(0,1,dimX)
-    for(ci in 1:nb_clust){
+    for(ci0 in 1:nb_clust){
+      ci = civals[ci0]
       if(dimX==1){
         et =et + var(infl[Call10==ci ,])
       }else{
@@ -360,6 +363,7 @@ compute_AME_t<- function(Yall,Xall, prop_T, grid_T,n_dist,Tmax,Tall,Tinf,Call1,m
 
     n <- dim(Yall)[1]
     nb_clust =length(unique(Call1))
+    civals = unique(Call1)
 
     boundsall = vector("list")
     infl = vector("list")
@@ -392,11 +396,11 @@ compute_AME_t<- function(Yall,Xall, prop_T, grid_T,n_dist,Tmax,Tall,Tinf,Call1,m
     # ti0=1
     # ci =1
     count = 1
-    for(ci in 1:nb_clust){
+    for(ci0 in 1:nb_clust){
       for(ti0 in 1:length(grid_T1)){
 
         T = grid_T1[ti0]
-
+        ci = civals[ci0]
         selecti = Tinf==T & Call1==ci & !is.na(Tall)
 
         Y = matrix(Yall[selecti,1:T], sum(selecti) , T )
@@ -524,14 +528,31 @@ compute_AME_t<- function(Yall,Xall, prop_T, grid_T,n_dist,Tmax,Tall,Tinf,Call1,m
 
           # % Computation of the average absolute bias
           mean_approx_St = exp(t*intercept)*apply(Lambda(index_int),1,prod)*C_mat[,t+1];
+
+          d0c = dim(Lambda(index_int))[2]
+          d0r = dim(Lambda(index_int))[1]
+
+          term1 = matrix(0,d0r, d0c)
+          term2 = matrix(0,d0r, d0c)
+
+
           if (t==0){
             deriv_log_C = 0;
+            for(k in 1:dimX){
+              term1 = term1 +  (deriv_log_C + b_hat[k] * Lambda(index_int))^2;
+              term2 = term2 + deriv_log_C*(b_hat[k] - deriv_log_C) + b_hat[k]^2*Lambda(index_int,1);
+            }
+
           }else{
             bbx = V* (matrix(C_mat[,t])%*%rep(1,dim(V)[2])) #bsxfun(@times, V,  C_mat[,t])
-            deriv_log_C = b_hat * ( bbx / (matrix(C_mat[,t+1])%*%rep(1,dim(bbx)[2])))  # bsxfun(@rdivide, ,C_mat[,t+1]);
+            for(k in 1:dimX){
+              deriv_log_C = b_hat[k] * ( bbx / (matrix(C_mat[,t+1])%*%rep(1,dim(bbx)[2])))  # bsxfun(@rdivide, ,C_mat[,t+1]);
+              term1 =  term1 + (deriv_log_C + b_hat[k] * Lambda(index_int))^2;
+              term2 =  term2 + deriv_log_C*(b_hat[k] - deriv_log_C) + b_hat[k]^2*Lambda(index_int,1);
+            }
+
           }
-          term1 = (deriv_log_C + b_hat * Lambda(index_int))^2;
-          term2 = deriv_log_C*(b_hat - deriv_log_C) + b_hat^2*Lambda(index_int,1);
+
           bias_approx_St = sum(mean(abs( (as.matrix(mean_approx_St)%*%rep(1,dim(term1)[2]))*(term1+term2))));
 
           # % Choice of the bandwidth
@@ -643,8 +664,13 @@ compute_AME_t<- function(Yall,Xall, prop_T, grid_T,n_dist,Tmax,Tall,Tinf,Call1,m
 
     count=1
     Delta_hat= matrix(0, nb_var,2)
-    for(ci in 1:nb_clust){
+    for(ci0 in 1:nb_clust){
       for(ti in grid_T1){
+
+
+        ci = civals[ci0]
+        selecti = Tinf==T & Call1==ci & !is.na(Tall)
+
         Delta_hat=  Delta_hat+ boundsall[[count]][selectX,]*sum(selecti)/n_s
         count=count+1
       }
@@ -654,8 +680,12 @@ compute_AME_t<- function(Yall,Xall, prop_T, grid_T,n_dist,Tmax,Tall,Tinf,Call1,m
     for_average = vector("list")
     count=1
     Delta_hat0= matrix(0, nb_var,2)
-    for(ci in 1:nb_clust){
+    for(ci0 in 1:nb_clust){
       for(ti in grid_T1){
+
+        ci = civals[ci0]
+        selecti = Tinf==T & Call1==ci & !is.na(Tall)
+
         Delta_hat0=  Delta_hat0 + boundsall[[count]][selectX,]*sum(selecti)/(n_s*ti)
         count=count+1
       }
