@@ -1,20 +1,18 @@
 Package: MarginalFElogit
 Type: Package
-Title: Estimation of Average Marginal Effects in Fixed Effect Logit
-        Models
-Version: 0.2.1
+Title: Estimation of Average Marginal Effects in Fixed Effect Logit Models
+Version: 0.3.1
 Author: c(person("Laurent", "Davezies", email = "laurent.davezies@ensae.fr", role = c("aut")),
     person("Xavier", "D'Haultfoeuille", email = "xavier.dhaultfoeuille@ensae.fr", role = c("aut")),
+    person("Christophe", "Gaillac", email = "christophe.gaillac@unige.ch", role = c("aut", "cre"),
     person("Louise", "Laage", email = "louise.laage@georgetown.edu", role = c("aut")),
-    person("Christophe", "Gaillac", email = "christophe.gaillac@ensae.fr", role = c("aut", "cre")))
-Maintainer: The package maintainer <christophe.gaillac@ensae.fr>
-Description: We consider inference about average marginal effects (AME) and similar parameters in a panel data fixed effects logit model. It implements the nonparametric estimator of the sharp bounds on the AME and the related confidence intervals on the AME from  Davezies, D'Haultfoeuille, and Laage (2021) <arxiv.org/abs/2105.00879> (DDL).  It also implements the second method proposed in DDL, which does not require any nonparametric estimation but may result in larger confidence intervals.
+    person("Mael", "Laoufi", email = "mael.laoufi@ensae.fr", role = c("aut", "cre"))
+Maintainer: The package maintainer <christophe.gaillac@unige.ch>
+Description: We consider inference about average marginal effects (AME) and similar parameters in a panel data fixed effects logit model. It computes the estimators of the sharp and outer bounds on these parameters derived in Davezies, D'Haultfoeuille, and Laage (2021) <arxiv.org/abs/2105.00879> (DDL), as well as the corresponding confidence intervals.
 License: GPL-3
 Encoding: UTF-8
-Suggests: knitr, rmarkdown
-VignetteBuilder: knitr
-RoxygenNote: 7.1.1
-Imports: snowfall, stats, MASS, pracma, R.matlab, abind, dplyr,
-        kableExtra, plm, signal, admisc, pglm
-NeedsCompilation: no
-Packaged: 2021-07-11 07:58:59 UTC; chris
+LazyData: true
+Suggests: knitr, rmarkdown, R.rsp
+VignetteBuilder: R.rsp
+RoxygenNote: 7.3.2
+Imports: snowfall, stats, MASS, pracma, R.matlab, abind, dplyr, kableExtra, plm, signal, admisc, pglm, rlang, tidyverse, tidyr, utils, methods, matlib
