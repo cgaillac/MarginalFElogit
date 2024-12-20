@@ -2,20 +2,18 @@
 % Please edit documentation in R/choose.R
 \name{choose}
 \alias{choose}
-\title{Compute C(n,k) with n and k scalars
-Allows for negative k or n<k (then returns 0)}
+\title{Takes input n, k and returns n choose k}
 \usage{
 choose(n, k)
 }
 \arguments{
-\item{n}{scalar in the combinatorial numers C(n,k)}
+\item{n}{number of elements to choose from}
 
-\item{k}{scalar in the combinatorial numers C(n,k)}
+\item{k}{number of elements to choose}
 }
 \value{
-the value of C(n,k)
+n choose k
 }
 \description{
-Compute C(n,k) with n and k scalars
-Allows for negative k or n<k (then returns 0)
+Takes input n, k and returns n choose k
 }

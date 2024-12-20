@@ -1,758 +1,454 @@
-#' Function which compute the AME at a specified value of T contained in Tall.
+#' Computes the bounds on the AME on the dataset, at the period given in input,
+#' and using the method specified as entry parameter.
 #'
-#' @param Yall matrix n x T containing the values of the dependent variable Yt.
-#' @param Xall array of dimensions n x T x dimX containing the values of the predictors at the different periods.
-#' @param prop_T a vector containin the proportions of the different numbers of periods observed in the dataset.
-#' @param grid_T a vector containing the different numbers of periods observed in the dataset.
-#' @param n_dist a vector containing the number of individuals which are observed for T periods, where T is given in grid_T
-#' @param Tmax the maximal number of periods observed in the dataset
-#' @param Tall vector of size n x1 containing the specified values of T where we compute the AME.
-#' @param Tinf vector of size n x1 containing the number of periods observed for each individual.
-#' @param Call1 matrix n x 1 containing the identifiers of the clusters to which each individual belongs. Default is NULL
-#' @param mat_C_k_T a matrix containing the combinatorial numbers.
-#' @param cheb_coeff the coefficients of the Chebyshev polynomials T_n.
-#' @param b_hat the estimated value of beta0 using the conditional maximum likelihood estimator.
-#' @param alpha the confidence level for the confidence intervals. Default is 5\%.
-#' @param CIOption the option for the choice of the type of confidence intervals for the quick method, either CI2 or CI3. Default is CI2.
-#' @param Option  chosen method to compute the AME: either sharp or quick. Default is quick.
-#' @param dimX the number of covariates
-#' @param selectX the vector of selected covariates to compute the AME.
-#' If NULL then bounds are computed for all covariates. NULL by default.
-#' @param phi_b the matrix of size n x dimX containing the influence function of the  conditional maximum likelihood estimator of beta.
-#' @param std_b the estimated standard deviation of the influence function of the  conditional maximum likelihood estimator of beta.
-#' @param nbCores the number of cores used by the program to compute the AME for the ``sharp" method.
-#' @param ratio the ratio R in DDL for the nonparametric estimator of the conditional moments of S
+#' @param data is an environment variable containing the data. If not already
+#' formatted, it will be formatted by the format_data function (see its
+#' documentation for information about the stored variables). It must contain at
+#' least:
+#' - data$Y is a matrix of size n x Tmax containing the values of the dependent variable Y,
+#' - data$X is an array of size n x Tmax x dimX containing the values of the covariates X
+#' - data$clusterIndexes is a vector of size n x 1 that specifies the cluster each
+#' observation pertains to. If it does not exist, the function enforces the default
+#' setting of i.i.d. observations - the parameter takes value 1:n so that each
+#' observation is its own cluster.
+#' @param TEstim is a scalar specifying the period at which the effect must be
+#' estimated. It can also be a vector of length n if the period at which the
+#' AME must be estimated depends on the individual (e.g. in event-studies models).
+#' @param estimators (default empty environment) is an environment in which the
+#' results of the CMLE estimation and of the non-parametric estimation of the
+#' conditional distribution of S will be stored. That way, if an input is
+#' specified, these numbers will not need to be computed again if compute_AME_t
+#' is called another time, as the same environment can be passed in input again.
+#' Results are stored as follows:
+#' - estimators$beta_hat, a list which contains the results from CMLE
+#' estimation:
+#' - estimators$beta_hat$beta_hat a vector of length dimX, the
+#' estimated value for the slope parameter.
+#' - estimators_beta_hat$phi_b a matrix of size n x dimX containing
+#' the value of the influence function at each observation (rows) w.r.t.
+#' each dimension of the covariates (columns).
+#' - estimators$beta_hat$var_b the estimated asymptotic covariance
+#' matrix, of size dimX x dimX, for the estimator beta_hat.
+#' - estimators$h_local_lin_proba a vector of length (Tmax + 1) containing,
+#' in j-th position, the bandwidth used to estimate the P(S = j - 1 | X)'s.
+#' - estimators$condlProbas: a matrix of size n x (Tmax + 1) containing,
+#' in position (i, j), the estimate for P(S = j - 1 | X) at the i-th
+#' observation.
+#' - estimators$densityEstimate a matrix of size n x (Tmax + 1) containing,
+#' at each row (individual), the estimated density for having covariates
+#' (X_1, ..., X_T). Each column represents the value found using the
+#' corresponding bandwidths from h.
+#' @param other_numbers (default empty environment) is an environment variable
+#' in which the variable other_numbers$comb_numbers is stored. A matrix of size
+#' (Tmax + 1) x (Tmax + 1) containg in position (i, j) the number (i choose j).
+#' If j > i the value is NA.
+#' @param selectX (default NULL) a vector containing the indices of the
+#' covariates w.r.t. which the AME must be computed. If null, the AME w.r.t. all
+#' covariates will be computed. All variables of interest should be given in the
+#' same call, as then there will be no additional cost relative to estimating
+#' w.r.t. only one covariate.
+#' @param Option (default "quick") Estimation method to be used. If "quick" or
+#' "outer" (case-insensitive) the outer bounds are computed. Otherwise, the sharp
+#' bounds are computed. We recommend using the outer bounds method if the number
+#' of covariates is at least three, if the number of periods observed is four or
+#' more, or if the sample size is small (less than 500) or large (more than 10^4).
+#' @param CIOption (default "CI2") When the outer bounds method is being used,
+#' specifies which confidence interval should be used. If "CI2", the CI2
+#' confidence interval is being used (see DDL, section 4.2), otherwise the CI3
+#' confidence interval will be used (see DDL, appendix C).
+#' @param alpha (default 0.05) desired asymptotic level of the estimated
+#' confidence intervals
+#' @param nbCores (default 4) number of cores to be used for parallel computing,
+#' to speed up the estimation of the sharp bounds.
 #'
-#' @return A list containing the values of : Option, n, Tmax, Time (computational time),
+#' @return a list containing:
+#'  - Option: same as input
+#'  - reducedSampleSize: the number of individuals used to estimate the AME. The
+#'    individuals that were not observed at the period for which the AME should
+#'    be computed were excluded.
+#'  - computationTime: the time (in seconds) taken to perform the computation
+#'  - estimatedAMEbounds: a matrix of size |selectX| x 2 containing the estimated
+#'    (sharp or outer, depending on Option) bounds on the AME, for each covariate
+#'    in selectX.
+#'  - CI: a matrix of size |selectX| x 2 containing in each row the estimated
+#'    confidence interval for the AME, for the corresponding covariate in selectX.
+#'  - alt_CI: a matrix of size |selectX| x 2 containing in each row the estimated
+#'    confidence interval for the AME, for the corresponding covariate in selectX,
+#'    using the confidence interval option NOT requested by the user, for the outer
+#'    bounds. If the sharp bounds were being computed, this output is NA.
+#'  - indl_estimates: a list containing the bounds and influence functions for
+#'    individual observations. They will be used to estimate the average AME
+#'    over all periods. They are organised as follows:
+#'  - indl_estimates$indl_bounds_on_delta is a matrix of size n x 2 x dimX
+#'    containing the estimated lower and upper bounds on the AME, for each
+#'    individual observation. It is NA for the individuals unobserved at the
+#'    requested period.
+#'  - indl_estimates$indl_infl_func_delta is a matrix of size n x 2 x dimX
+#'    containing the estimated value of the influence function for the lower and
+#'    upper bounds on the AME, for each individual observation. It is NA for the
+#'    individuals unobserved at the requested period.
 #'
-#'  - Delta_hat: either the estimator of the bounds on Delta (sharp method) or the approximation of Delta (quick method);
-#'
-#'  - length_CI: the length of the confidence intervals;
-#'
-#'  - et: the estimated standard error of the influence function(s), either of the two bounds on Delta (sharp method) or of
-#'  the approximation of Delta (quick method);
-#'
-#'  - bias_sup: the estimated upper bound on the bias (quick method);
-#'
-#'  - CI: the confidence intervals at the alpha level;
-#'
-#'  - phi_alpha: the phi alpha statistic intervening in the computation of the confidence interval of the sharp method;
-#'
-#'  - b_hat: the estimated value of beta0 using the conditional maximum likelihood estimator;
-#'
-#'  - std_b: the estimated standard deviation of the influence function of the  conditional maximum likelihood estimator of beta;
-#'
-#'  - influence: the matrix of size n x dimX containing the influence function of the  conditional maximum likelihood estimator of beta;
-#'
-#'  - for_average: a list containing the estimated values of Delta(x) and the influence function weighted by the values of Tinf, to compute the
-#'  average of the AME over all the observed periods.
 #' @export
 #'
 # @examples
-compute_AME_t<- function(Yall,Xall, prop_T, grid_T,n_dist,Tmax,Tall,Tinf,Call1,mat_C_k_T,cheb_coeff,b_hat,alpha = 0.05, CIOption ,Option,dimX,selectX=NULL,  phi_b, std_b, nbCores=4,  ratio=10){
+compute_AME_t <- function(data, TEstim, estimators = env(), other_numbers = env(), selectX = NULL, Option = "quick", CIOption = "CI2", alpha = 0.05,  nbCores = 4) {
 
-  ### parameters for the sharp method.
-  # ratio=10
-  RK = 1/(2*sqrt(pi)); #% int K^2(u)du
-  kappa2 = 1; #% int u^2 K(u)du
+  # Start monitoring the computation time
+  startTime <- Sys.time()
 
-  c_hat = vector("list")
+  # Initialisation ----------------------------------------------------------
 
-  ### number of variables to compute the AME/ATE
-  if(is.null(selectX)){
-    nb_var = dimX
-    selectX = 1:dimX
-  }else{
-    nb_var = length(selectX)
+  # Values derived from the data (shape, number of periods observed ...)
+  dimX <- dim(data$X)[3]
+  fullSampleSize <- dim(data$X)[1]
+  Tmax <- dim(data$X)[2]
+  Tobsd <- rowSums(!is.na(data$Y))
+
+  # Number of variables to compute the AME
+  if (is.null(selectX)) {
+    selectX <- 1:dimX
+  }
+  nb_var <- length(selectX)
+
+  # Beta estimated from the CMLE
+  if (!env_has(estimators, "beta_hat")) {
+    beta_hat <- estim_slope_cmle_maxn(data)
+    env_poke(estimators, "beta_hat", beta_hat)
+  }
+  beta_hat <- estimators$beta_hat$beta_hat
+  phi_b <- estimators$beta_hat$phi_b
+
+  # If not already computed, we compute the matrix of combinatorial numbers
+  # (i, j)-th value is i choose j. We use recursion
+  if (!env_has(other_numbers, "comb_numbers")) {
+    comb_numbers <- matrix(NA, Tmax + 1, Tmax + 1)
+    comb_numbers[, 1] <- 1
+    diag(comb_numbers) <- 1
+    if (Tmax > 1) {
+      for (k in 2:Tmax) {
+        comb_numbers[k + 1, 2:k] <- comb_numbers[k, 1:(k-1)] + comb_numbers[k, 2:k]
+      }
+    }
+    env_poke(other_numbers, "comb_numbers", comb_numbers)
+  }
+  comb_numbers <- other_numbers$comb_numbers
+
+  # Ensure the data has the right format (and format it if not)
+  format_data(data, beta_hat)
+
+  # We extract the individuals for which there is an observation at the period for which we want
+  # to compute the AME (and for which TEstim is not NA)
+  keepIndls <- !is.na(extractIndlPeriod(data$Y, TEstim))
+  nbIndls <- sum(keepIndls)
+  X <- array(data$X[keepIndls,,], c(nbIndls, Tmax, dimX))
+  Y <- data$Y[keepIndls,]
+  clusterIndexes <- data$clusterIndexes[keepIndls]
+  S <- data$S[keepIndls]
+  V <- data$V[keepIndls,]
+  C_S_tab <- data$C_S_tab[keepIndls,]
+  C_S_minus_one_one_period_out_array <- data$C_S_minus_one_one_period_out_array[keepIndls,,]
+  phi_b <- matrix(phi_b[keepIndls,], ncol = dimX)
+  if (length(TEstim) > 1) {
+    TEstim <- TEstim[keepIndls]
+  }
+  Tobsd <- Tobsd[keepIndls]
+
+  # We compute the "tilded" values (difference or ratio of variables at each period v.s. at TEstim)
+  Xtilde <- array(NA, dim(X))
+  for (k in 1:dim(X)[3]) {
+    X_tk <- extractIndlPeriod(X[,, k], TEstim)
+    Xtilde[,, k] <- X[,, k] - repmat(matrix(X_tk, ncol = 1), 1, dim(X)[2])
   }
 
-  ### to stock the phi_alpha stat.
-  phi_alpha_m= matrix(NA,nb_var,1)
+  Vt <- extractIndlPeriod(V, TEstim)
+  Vtilde <- V / repmat(matrix(Vt, ncol = 1), 1, dim(X)[2])
 
-  ###
-  grid_T0 = sort(unique(Tall))
-  start_time <- Sys.time()
+  # Computation of statistics common to both algorithms  --------
 
-  # dim(Xall)
-  ## Estimation, either "quick" or "sharp"
-  if(Option == "quick"){
+  # Get the approximated polynomial for Omega(·, x)
+  out <- best_approx_poly(Vtilde, Xtilde)
+  coeffApproxPolyOmega <- out[["bestPoly"]]
+  topCoeffOmega <- out[["topCoeffOmega"]]
+  derivCoeffsOmegaDbeta <- out[["derivCoeffsOmegaDbeta"]]
+  coeffsOmega <- out[["coeffsOmega"]]
 
-    X = array(Xall[!is.na(Tall),,], c(sum(!is.na(Tall)),dim(Xall)[2],dim(Xall)[3]))
-    Y = matrix(Yall[!is.na(Tall),], sum(!is.na(Tall)), dim(Yall)[2])
-    Tall0 = Tall[!is.na(Tall)]
-    Tinf0 = Tinf[!is.na(Tall)]
-    Call10 = matrix(Call1[!is.na(Tall),], sum(!is.na(Tall)), 1)
-    grid_T1 = grid_T[grid_T >=min( Tall0 )]
+  if (Option == "quick") {
 
-    # Tmax = max(grid_T1)
-    # X = Xall
-    # Y = Yall
-    n <- dim(X)[1]
-    # T <- dim(X)[2]
-    ## stock the sample size
-    n_s <- n
+    # Perform the quick estimation algorithm (outer bounds) -------------------
 
-    if(length(dim(X))==3){
-      dimX = dim(X)[3]
-    }else{
-      dimX=1
+    # We compute the terms in the formula for p(X, S, beta), given in section 4.2.
+    ### First we compute the matrix (T - t choose S - t) for T the number of period for the i-th observation (rows),
+    ### S the number of times Y = 1 for that observation and t = 0, ..., Tmax (columns).
+    Tobsd_minus_t <- repmat(matrix(Tobsd, ncol = 1), 1, Tmax + 1) - repmat(0:Tmax, nbIndls, 1)
+    Tobsd_minus_t[Tobsd_minus_t < 0] <- NA
+
+    S_minus_t <- repmat(matrix(S, ncol = 1), 1, Tmax + 1) - repmat(0:Tmax, nbIndls, 1)
+    S_minus_t[S_minus_t < 0] <- NA
+
+    T_minus_t_choose_S_minus_t_mat <-
+      extractIndlPeriod(
+        comb_numbers,
+        vecIndls = Tobsd_minus_t + 1,
+        vecPeriods = S_minus_t + 1
+      )
+
+    ### Multiply by the coefficients of the polynomial
+    p_terms_mat <- T_minus_t_choose_S_minus_t_mat * coeffApproxPolyOmega
+
+    ### Sum and multiply by exp(s v(x, beta)) / C_s(x, beta)
+    p_vec <- rowSums(p_terms_mat, na.rm = TRUE) * Vt^S / extractIndlPeriod(C_S_tab, S + 1)
+
+    ### Multiply by the different components of beta to get the Delta_hat for each characteristic
+    Delta_hat <- beta_hat[selectX] * mean(p_vec)
+
+    # We compute the maximal bias estimate and deduce the bounds on the AME
+    indl_bias_sup <- 1 / 2 / 4^Tobsd * T_minus_t_choose_S_minus_t_mat[, 1] * Vt^S / extractIndlPeriod(C_S_tab, S + 1) * abs(topCoeffOmega)
+    bias_sup <- abs(beta_hat[selectX]) * mean(indl_bias_sup)
+    average_bounds_on_delta <- cbind(Delta_hat - bias_sup, Delta_hat + bias_sup)
+
+    # We save the resulting individual bounds from the individual estimates
+    # of delta_hat(X) and of the maximal bias at X
+    indl_estimates <- vector("list")
+    indl_estimates[["indl_bounds_on_delta"]] <- array(NA, c(fullSampleSize, 2, nb_var))
+    indl_estimates[["indl_bounds_on_delta"]][keepIndls, 1,] <- repmat(matrix(p_vec - indl_bias_sup, ncol = 1), 1, nb_var) * repmat(beta_hat[selectX], nbIndls, 1)
+    indl_estimates[["indl_bounds_on_delta"]][keepIndls, 2,] <- repmat(matrix(p_vec + indl_bias_sup, ncol = 1), 1, nb_var) * repmat(beta_hat[selectX], nbIndls, 1)
+
+    # Compute the confidence intervals for the quick estimation algorithm -----
+
+    # We compute the influence functions for delta, as given page 22 of DDL
+    # Each column corresponds to the influence function relative to one of the beta_k
+    # We ignore the constant term E(p(X, S, beta)) which has no impact on the variance
+    # Note that in DDL, their p is our beta * p here, so that
+    # psi_ik = beta_k * p_i + E(p) phi_ik + beta' * phi_i * E(dp/dbeta)
+    infl_func_delta <-
+      repmat(matrix(p_vec, ncol = 1), 1, nb_var) * repmat(beta_hat[selectX], nbIndls, 1) + # p
+      mean(p_vec) * phi_b[, selectX] # E(p) * phi_i
+
+    # We compute and add the last term, using
+    # dp/dbeta_k = p * (S X_Testim,k - sum_t X_tk V_tk C_(S-1)(X1, X_t-1, X_t+1, X_T, beta) / C_S(X, beta))
+    # + sum_t=0^S Vt^S / C_S(X, beta) d/dbeta(lambda_t + b*_t,T lambda_(T+1))
+
+    ### First we need to extract the C_(S-1)(...) at the observed values of S
+    C_S_minus_one_one_period_out <- matrix(NA, nbIndls, Tmax)
+    for (t in 1:Tmax) {
+      C_S_minus_one_one_period_out[, t] <- extractIndlPeriod(C_S_minus_one_one_period_out_array[,, t], max(S, 1))
+      C_S_minus_one_one_period_out[S == 0, t] <- 0
     }
 
-    S = apply(Y,1,sumNA)
-    # dim(  X)
-    # if( length(dim(X)) ==3){
-    #   XT =  matrix(X[,Tall,],n,dimX)
-    # }else{
-    #   XT = matrix(X[,Tall],n,dimX)
-    # }
+    ### Now apply the formula
+    for (k in 1:dimX) {
+      infl_func_delta <-
+        infl_func_delta +
+        repmat(beta_hat[selectX], nbIndls, 1) * repmat(matrix(phi_b[, k], ncol = 1), 1, nb_var) *
+          mean(
+            p_vec * (
+              S * extractIndlPeriod(X[,, k], TEstim) -
+              rowSums(X[,, k] * V * C_S_minus_one_one_period_out, na.rm = TRUE) / extractIndlPeriod(C_S_tab, S + 1)
+            ) +
+            rowSums(T_minus_t_choose_S_minus_t_mat * derivCoeffsOmegaDbeta[,, k], na.rm = TRUE) * Vt^S / extractIndlPeriod(C_S_tab, S + 1)
+          )
+    }
+
+    ### Save the individual influence functions
+    indl_estimates[["indl_infl_func_delta"]] <- array(NA, c(fullSampleSize, 2, nb_var))
+    indl_estimates[["indl_infl_func_delta"]][keepIndls, 1,] <- infl_func_delta
+    indl_estimates[["indl_infl_func_delta"]][keepIndls, 2,] <- infl_func_delta
+
+    # Now we know the influence functions, we can compute the clustered standard deviation
+    infl_func_delta_cluster <- rowsum(infl_func_delta, clusterIndexes)
+    std_delta <- apply(infl_func_delta_cluster, 2, sd, na.rm = TRUE) / sqrt(nbIndls)
+
+    # Compute the confidence intervals for each AME
+    length_CI2 <- rep(NA, nb_var)
+    length_CI3 <- rep(NA, nb_var)
+    for (i in 1:nb_var) {
+      ### First compute the corrected parameter for CI3.
+      ### We take alpha1 = 4 * alpha / 5 and alpha2 = alpha / 5
+      ### Note we use the full sample size, and not nbIndls, for the
+      ### asymptotic variance of the CMLE as it's estimated on the
+      ### whole set.
+      bCI3 <- (abs(beta_hat[selectX[i]]) + qnorm(1 - 4 * alpha / 5) * estimators$beta_hat$var_b[selectX[i], selectX[i]] / fullSampleSize) * mean(indl_bias_sup)
+
+      ### Then compute the length of each CI
+      length_CI2[i] <- 2 * std_delta[i] * sqrt(qchisq(1 - alpha, df = 1, ncp = (bias_sup[i] / std_delta[i])^2))
+      length_CI3[i] <- 2 * std_delta[i] * sqrt(qchisq(1 - alpha / 5, df = 1, ncp = (bCI3 / std_delta[i])^2))
+    }
+    CI2 <- cbind(matrix(Delta_hat - length_CI2 / 2, ncol = 1), matrix(Delta_hat + length_CI2 / 2, ncol = 1))
+    CI3 <- cbind(matrix(Delta_hat - length_CI3 / 2, ncol = 1), matrix(Delta_hat + length_CI3 / 2, ncol = 1))
+
+  } else{
+
+    # Perform the sharp bound estimation --------------------------------------
+
+    # Estimate the conditional probabilities that S = t if not done already
+    if (!env_has(estimators, "condlProbas")) {
+      choose_bandwidth_and_estim_condl_proba(data, estimators)
+    }
+    PSt_X <- estimators$condlProbas[keepIndls,]
+
+    # We restrict the datasets to individuals observed at the period of interest
+    focused_data <- env("X" = X, "Y" = Y, "clusterIndexes" = clusterIndexes, "S" = S, "V" = V, "C_S_tab" = C_S_tab, "Tobsd" = Tobsd, "C_S_minus_one_one_period_out_array" = C_S_minus_one_one_period_out_array)
+    focused_estimators <- env("beta_hat" = estimators$beta_hat, "condlProbas" = estimators$condlProbas[keepIndls,], "densityEstimate" = estimators$densityEstimate, "alphaFElogit" = estimators$alphaFELogit, "h_local_lin_proba" = estimators$h_local_lin_proba)
+
+    # Obtain the bounds on the AME. Note they still need to be multiplied by the
+    # relevant beta's
+    out <- bound_delta(focused_data, focused_estimators, other_numbers, Vt, coeffsOmega, topCoeffOmega, nbCores)
+    average_bounds_on_delta <- out$average_bounds_on_delta
+    indl_bounds_on_delta <- out$indl_bounds_on_delta
+
+    # Compute the influence functions -----------------------------------------
+
+    # First we need to (numerically) estimate the derivative of the bounds
+    # in beta and gamma.
+    h_deriv <- 10^-3
+    deriv_beta <- matrix(NA, dimX, 2)
+    deriv_gamma <- array(NA, c(nbIndls, Tmax + 1, 2))
+
+    ### Gamma derivative
+    for (t in 0:Tmax) {
+      estimators_deriv <- env()
+      estimators_deriv$condlProbas <- focused_estimators$condlProbas + repmat((0:Tmax == t) * h_deriv, nbIndls, 1)
+      estimators_deriv$densityEstimate <- focused_estimators$densityEstimate
+      estimators_deriv$h_local_lin_proba <- focused_estimators$h_local_lin_proba
+
+      for_deriv_indl_bounds_on_delta <-
+        bound_delta( # The first argument is the same as data but individuals which are not observed at the period of interest are taken out
+          env("X" = X, "Y" = Y, "clusterIndexes" = clusterIndexes, "S" = S, "V" = V, "C_S_tab" = C_S_tab, "Tobsd" = Tobsd, "C_S_minus_one_one_period_out_array" = C_S_minus_one_one_period_out_array),
+          estimators_deriv, other_numbers,
+          Vt,
+          coeffsOmega,
+          topCoeffOmega,
+          nbCores)$indl_bounds_on_delta
+
+      deriv_gamma[, t + 1,] <- (for_deriv_indl_bounds_on_delta - indl_bounds_on_delta) / h_deriv
+    }
+
+    ### Beta derivative
+    for (k in 1:dimX) {
+      # We create a copy of the data, which we format, to recompute the C_S_beta etc
+      data_deriv <- env()
+      data_deriv$X <- focused_data$X
+      data_deriv$Y <- focused_data$Y
+      data_deriv$clusterIndexes <- focused_data$clusterIndexes
+      format_data(data_deriv, beta_hat + (1:dimX == k) * h_deriv)
+
+      # We compute the new Vt and the coefficients for the new beta
+      Vtilde_deriv <- Vtilde * exp(h_deriv * Xtilde[,, k])
+      Vt_deriv <- extractIndlPeriod(data_deriv$V, TEstim)
+
+      out <- best_approx_poly(Vtilde_deriv, Xtilde)
+      topCoeffOmega_deriv <- out[["topCoeffOmega"]]
+      coeffsOmega_deriv <- out[["coeffsOmega"]]
+
+      # We use a small trick with signs to ensure that we respect
+      # the sign criterion used in Appendix C.2 of DDL
+      changeOfSign <- sign(topCoeffOmega_deriv * topCoeffOmega)
 
 
-    XT =  matrix(NA,n,dimX)
-    if( length(dim(X)) ==3){
-      # XT = matrix(X[,Tall,],n,dimX)
-      for (ti in grid_T0){
-        if(sum(Tall0==ti)>0){
-          XT[Tall0==ti,] =  matrix(X[Tall0==ti,ti,],sum(Tall0==ti),dimX)
-        }
+      for_deriv_average_bounds_on_delta <- colMeans(repmat(matrix(changeOfSign, ncol = 1), 1, 2) * bound_delta(data_deriv, focused_estimators, other_numbers, Vt_deriv, repmat(matrix(changeOfSign, ncol = 1), 1, Tmax + 2) * coeffsOmega_deriv, changeOfSign * topCoeffOmega_deriv, nbCores)$indl_bounds_on_delta)
+
+      deriv_beta[k,] <- (for_deriv_average_bounds_on_delta - average_bounds_on_delta) / h_deriv
+    }
+
+    # Now we can compute the influence functions.
+    # Here we account for the extra multiplication by beta
+    # which was not present in the above values of the bounds.
+    infl_func_delta <- array(NA, c(fullSampleSize, 2, nb_var))
+    indic_S_minus_PSt_X <- (repmat(matrix(S, ncol = 1), 1, Tmax + 1) == repmat(0:Tmax, nbIndls, 1)) - PSt_X
+    for (i in 1:nb_var) {
+      k <- selectX[i]
+      infl_func_delta[keepIndls,, i] <-
+        beta_hat[k] * indl_bounds_on_delta +
+        repmat(matrix(phi_b[, k], ncol = 1), 1, 2) * repmat(average_bounds_on_delta, nbIndls, 1) +
+        beta_hat[k] * phi_b %*% deriv_beta +
+        beta_hat[k] * matrix(
+          c(
+            rowSums(indic_S_minus_PSt_X * deriv_gamma[,, 1], na.rm = TRUE),
+            rowSums(indic_S_minus_PSt_X * deriv_gamma[,, 2], na.rm = TRUE)
+          ),
+          ncol = 2
+        )
+    }
+
+    # Estimate the asymptotic variance from the influence functions
+    # and compute confidence intervals
+    infl_func_delta_cluster <- array(NA, c(length(unique(clusterIndexes)), 2, nb_var))
+    infl_func_delta_cluster[, 1,] <- rowsum(infl_func_delta[keepIndls, 1,], clusterIndexes, na.rm = TRUE)
+    infl_func_delta_cluster[, 2,] <- rowsum(infl_func_delta[keepIndls, 2,], clusterIndexes, na.rm = TRUE)
+
+    CI <- matrix(NA, nb_var, 2)
+    cur_beta_is_not_null <- rep(NA, nb_var)
+    for (i in 1:nb_var) {
+      k <- selectX[i]
+      std_bounds <- apply(infl_func_delta_cluster[,, i], 2, sd, na.rm = TRUE) / sqrt(nbIndls)
+      # The IM_quantile is symmetric in the two elements of std_bounds so no need to rearrange
+      IM_quantile <- compute_IM_quantile(alpha, sort(beta_hat[k] * average_bounds_on_delta), std_bounds)
+
+      ### This is a t-test to see if the beta corresponding to the current AME
+      ### is null
+      cur_beta_is_not_null[i] <- sqrt(fullSampleSize * beta_hat[k]^2 / estimators$beta_hat$var_b[k, k]) > qnorm(1 - alpha/2)
+
+      if (beta_hat[k] >= 0) {
+        CI[i, ] <- sort(beta_hat[k] * average_bounds_on_delta) + IM_quantile * c(-std_bounds[1], std_bounds[2])
+      } else {
+        CI[i, ] <- sort(beta_hat[k] * average_bounds_on_delta) + IM_quantile * c(-std_bounds[2], std_bounds[1])
       }
-    }else{
-      # XT = matrix(X[,Tall],n,dimX)
-      for (ti in grid_T0){
-        if(sum(Tall0==ti)>0){
-          XT[Tall0==ti,] = matrix(X[Tall0==ti,ti],sum(Tall0==ti),dimX)
-        }
-      }
-    }
 
-    # Step 1: CMLE
-    # b_hat = fminunc(@(b) log_lik_FE_logit(b,Y,X), beta0,options);
-    # if(dim(X)[2]==1){
-    #   b_hat = optimize( log_lik_FE_logit,start_bounds,Y=Y,X=X)$minimum
-    # }else{
-    #   b_hat = optim(par = start_point, log_lik_FE_logit,Y=Y,X=X)$par
-    # }
-    # b_hat$par
-
-
-    index = matrix(NA,n,Tmax)
-
-    ## test if X of dim > 2
-    if(length(dim(X))==3){
-      for(ti in grid_T1){
-        for (t in 1:ti){
-          index[Tinf0==ti,t] = X[Tinf0==ti,t,]%*%matrix(b_hat);
-        }
-      }
-    }else{
-      index = X*b_hat;
-    }
-    V = exp(index);
-
-
-    Vtilde = matrix(NA,dim(V)[1],dim(V)[2])
-    for(ti in grid_T1){
-      Vtilde[Tinf0==ti,] =  V[Tinf0==ti,]/(matrix(V[Tinf0==ti,Tall0[Tinf0==ti]],sum(Tinf0==ti),1)%*%rep(1,dim(V)[2])) #bsxfun(@rdivide,V,V[,T]);
-    }
-
-    Vtilde_min1 =  matrix(NA,dim(V)[1], (Tmax -1) )
-
-    # ti=4
-    for(ti in grid_T1){
-      if(ti>=2){
-        ind = 1:ti
-        Vtilde_min1[Tinf0==ti,1:(ti-1)] =  Vtilde[Tinf0==ti, ind[ind!=Tall0[Tinf0==ti][1]]] - 1;
-      }
-    }
-
-
-    out=best_approx_poly(Vtilde_min1,grid_T1,Tinf0);
-    res = out[[1]]
-    g= out[[2]]
-
-
-    if(length(dim(X))==2){
-      Xtilde = X - matrix(XT,n,1)%*%rep(1,dim(X)[2])
-    }else{
-      Xtilde = X
-      for(j in 1:dim(X)[3]){
-        Xtilde[,,j] = X[,,j] - matrix(XT[,j],n,1)%*%rep(1,dim(X)[2])
-      }
-    }
-
-
-
-    # ti=3
-    C_S_vec = matrix(NA,n,1)
-    for(ti in grid_T1){
-      C_S_vec[Tinf0==ti] = C_S_fun(S[Tinf0==ti],matrix(Vtilde[Tinf0==ti,1:ti], sum(Tinf0==ti) ,ti ));
-    }
-
-
-    mat_combin = matrix(NA,n,max(grid_T1)+1)
-    for(ti in grid_T1){
-      T_minus_t = repmat(ti - (0:ti ),sum(Tinf0==ti),1);
-      S_minus_t =  matrix(S[Tinf0==ti])%*%rep(1,ti +1) - matrix(rep(1,length(S[Tinf0==ti])))%*%seq(0,ti )  #bsxfun(@minus, S, seq(0,T));
-      mat_combin[Tinf0==ti,1:(ti+1)] = choose(T_minus_t,S_minus_t)/repmat(matrix(C_S_vec[Tinf0==ti]),1,ti+1);
-    }
-
-    Mat_fin  = matrix(NA,n,max(grid_T1)+1)
-    Mat_a  = matrix(NA,n,max(grid_T1)+1)
-    # Mat_fin = Mat_a*mat_combin;
-    # ti =3
-    for(ti in grid_T1){
-      Mat_a[Tinf0==ti,1:(ti+1)] = fliplr(matrix(res[Tinf0==ti,1:(ti+1)], sum(Tinf0==ti),ti+1));
-      Mat_fin[Tinf0==ti,1:(ti+1)] = Mat_a[Tinf0==ti,1:(ti+1)] *mat_combin[Tinf0==ti,1:(ti+1)];
-    }
-
-
-    moy_fin =  sum(Mat_fin,na.rm=T)/n;
-    Delta_hat = b_hat[selectX] * moy_fin;
-
-    for_average = vector("list")
-    for_average[[1]] =  b_hat[selectX] * sum((Mat_fin)/(matrix(Tinf0,n,1)%*%rep(1,dim(mat_combin)[2])),na.rm=T)/n;
-
-
-    ###############################
-    m0 = mat_combin[,1]
-    m0[is.na(m0)] = 0
-    g[is.na(g)] = 0
-
-    # Estimation of the maximal bias
-    bias_sup = abs(b_hat[selectX]) * c(t(m0)%*%abs(g/4^Tinf0)/(n*2));
-    for_average[[2]] = abs(b_hat[selectX]) * c(t( m0)%*%abs(g/(4^Tinf0*Tinf0))/(n*2));
-
-    # Influence function of Delta_hat
-    if(dimX>1){
-      term1 =  matrix(apply(Mat_fin,1,sumNA))%*%b_hat + moy_fin *   phi_b[!is.na(Tall),]
-    }else{
-      term1 =  apply(Mat_fin,1,sumNA)*b_hat + moy_fin *   phi_b[!is.na(Tall),]
-    }
-
-    for_term2 = zeros(n,1);
-
-    # k=1
-    for (k in (1:dimX)){
-      deriv_C_S = zeros(n,1);
-      if(length(dim( Xtilde)) == 2){
-        for(ti in grid_T1){
-          if(ti==1){
-            t=1
-            deriv_C_S[Tinf0==ti] = deriv_C_S[Tinf0==ti] + Xtilde[Tinf0==ti,t]*Vtilde[Tinf0==ti,t]
-          }else{
-            for( t in 1:ti){
-
-              Vtilde00 = matrix(Vtilde[Tinf0==ti,(1:ti)],sum(Tinf0==ti),ti)
-              deriv_C_S[Tinf0==ti] = deriv_C_S[Tinf0==ti] + Xtilde[Tinf0==ti,t]*Vtilde[Tinf0==ti,t]*C_S_fun(S[Tinf0==ti]-1,
-                                                                                                            matrix(Vtilde00[,(1:ti)!=t],sum(Tinf0==ti), sum((1:ti)!=t)  )  );
-            }
-          }
-        }
-      }else{
-        # ti  =3
-        # t=2
-        for(ti in grid_T1){
-          if(ti==1){
-            deriv_C_S[Tinf0==ti] = deriv_C_S[Tinf0==ti] + Xtilde[Tinf0==ti,t,k]*Vtilde[Tinf0==ti,t];
-          }else{
-            for( t in 1:ti){
-
-              Vtilde00 = matrix(Vtilde[Tinf0==ti,1:ti],sum(Tinf0==ti),ti)
-              deriv_C_S[Tinf0==ti] = deriv_C_S[Tinf0==ti] + Xtilde[Tinf0==ti,t,k]*Vtilde[Tinf0==ti,t]*C_S_fun(S[Tinf0==ti]-1,
-                                                                                                              matrix(Vtilde00[,(1:ti)!=t],sum(Tinf0==ti), sum((1:ti)!=t)  )  );
-            }
-          }
-        }
-      }
-
-      # C_S_fun(t-1, Vtilde0[,(1:(T-1))!=u]-1)
-      deriv_e = zeros(n,Tmax+1);
-      if(length(dim( Xtilde)) == 2){
-        for(ti in grid_T1){
-          if(ti!=1){
-            # Vtilde0 = as.matrix(Vtilde[Tinf0==ti,-c(ti)])
-            Vtilde0 =matrix(Vtilde_min1 [Tinf0==ti,],sum(Tinf0==ti),dim(Vtilde_min1)[2])
-            for( t in 1:(ti-1)){
-              for( u in 1:(ti-1)){
-
-                Vtilde00 = matrix(Vtilde0[,(1:(ti-1))],dim(Vtilde0)[1],ti-1)
-                deriv_e[Tinf0==ti,t+1] = deriv_e[Tinf0==ti,t+1] + Xtilde[Tinf0==ti,u]*Vtilde[Tinf0==ti,u]* C_S_fun(t-1, matrix(Vtilde00[,(1:(ti-1))!=u],dim(Vtilde00)[1],sum((1:(ti-1))!=u)));
-              }
-            }
-          }
-        }
-
-      }else{
-        for(ti in grid_T1){
-          if(ti!=1){
-            # Vtilde0 = as.matrix(Vtilde[Tinf0==ti,-c(ti)])
-            Vtilde0 = matrix(Vtilde_min1 [Tinf0==ti,],sum(Tinf0==ti),dim(Vtilde_min1)[2])
-            for( t in 1:(ti-1)){
-              for( u in 1:(ti-1)){
-
-                Vtilde00 = matrix(Vtilde0[,(1:(ti-1))],dim(Vtilde0)[1],ti-1)
-                deriv_e[Tinf0==ti,t+1] = deriv_e[Tinf0==ti,t+1] + Xtilde[Tinf0==ti,u,k]*Vtilde[Tinf0==ti,u]* C_S_fun(t-1, matrix(Vtilde00[,(1:(ti-1))!=u],dim(Vtilde00)[1],sum((1:(ti-1))!=u)));
-              }
-            }
-          }
-        }
-      }
-      deriv_lambda = zeros(n,Tmax+2);
-      for(ti in grid_T1){
-        deriv_lambda[Tinf0==ti,3:(ti+2)] = deriv_e[Tinf0==ti,2:(ti+1)]-deriv_e[Tinf0==ti,1:ti];
-      }
-
-      # dim(deriv_e)
-      # Derivative of the coeff a_t wrt beta
-      deriv_a = deriv_lambda[,1:(Tmax+1)]
-      for(ti in grid_T1){
-        deriv_a[Tinf0==ti,1:(ti+1)] = deriv_lambda[Tinf0==ti,1:(ti+1)] - matrix(deriv_lambda[Tinf0==ti,(ti+2)])%*%cheb_coeff[[ti]][1:(ti+1)]/(2^(ti+1));
-      }
-      # moy_deriv = (T+1)*mean(mat_combin*(deriv_a - bsxfun(@times, Mat_a, deriv_C_S/C_S_vec)),'all');
-      moy_deriv = sum(mat_combin*(deriv_a -  Mat_a* ((deriv_C_S/C_S_vec)%*%rep(1,dim(Mat_a)[2]))),na.rm=T)/n;
-
-
-      for_term2 = for_term2 + moy_deriv*  phi_b [!is.na(Tall),k];
-      # term2 = b_hat * moy_deriv * phi;
-
-    } ## end of the for k loop
-
-    if(dimX==1){
-      term2 = for_term2 * b_hat
-    }else{
-      term2 = for_term2 %*% b_hat
-    }
-
-    infl =  term1 + term2
-
-
-    nb_clust =length(unique(Call10))
-    civals = unique(Call10)
-
-    et = matrix(0,1,dimX)
-    for(ci0 in 1:nb_clust){
-      ci = civals[ci0]
-      if(dimX==1){
-        et =et + var(infl[Call10==ci ,])
-      }else{
-        et =et + diag(var(infl[Call10==ci ,]))
+      if (!cur_beta_is_not_null[i]) {
+        CI[i, 1] <- min(CI[i, 1], 0)
+        CI[i, 2] <- max(CI[i, 2], 0)
       }
     }
 
-    et =sqrt(et)/sqrt(dim(infl)[1])
-    et = et[selectX]
-    # et = std(infl)/sqrt(dim(infl)[1])
-    eps_n = (2*log(log(n)))^(1/2)/sqrt(dim(infl)[1])
+    # Account for the missing beta factor for the average bounds
+    average_bounds_on_delta <- repmat(matrix(beta_hat[selectX], ncol = 1), 1, 2) * repmat(average_bounds_on_delta, nb_var, 1)
 
-    if( CIOption == "CI3"){
-      # length_CI[s] = 2 * et[s] * sqrt(ncx2inv(0.95,1,(bias_sup[s]/et[s])^2));
-      length_CI = 2 * et * sqrt(qchisq(0.95,1, ncp = ((bias_sup + eps_n)/et)^2, lower.tail = TRUE, log.p = FALSE))
-    }else{
-      length_CI = 2 * et * sqrt(qchisq(0.95,1, ncp = (bias_sup/et)^2, lower.tail = TRUE, log.p = FALSE))
+    # Save individual estimates
+    indl_estimates <- vector("list")
+    indl_estimates[["indl_bounds_on_delta"]] <- array(NA, c(fullSampleSize, 2, nb_var))
+    for (k in 1:nb_var) {
+      indl_estimates[["indl_bounds_on_delta"]][keepIndls,, k] <- beta_hat[selectX[k]] * indl_bounds_on_delta
     }
-    ### compute CI
-
-    CI =  matrix(Delta_hat, nb_var,1)%*%rep(1,2)
-    CI[,1] = CI[,1] -  matrix(length_CI/2,  nb_var,1)
-    CI[,2] = CI[,2] +  matrix(length_CI/2,  nb_var,1)
-
-    # Delta_hat - length_CI/2
-    # Save results
-
-
-  }else{ ### end of Option 1 "quick".
-
-    n <- dim(Yall)[1]
-    nb_clust =length(unique(Call1))
-    civals = unique(Call1)
-
-    boundsall = vector("list")
-    infl = vector("list")
-    for(k in 1:dimX){
-      infl[[k]]=matrix(0,n,2)
-      # phi_b[[k]] = matrix(0,n,2)
-    }
-
-    # phi_b =matrix(0,n,dimX)
-
-    sfInit(parallel = TRUE, cpus = nbCores, type = "SOCK")
-    sfExportAll()
-    sfLibrary(MarginalFElogit)
-    sfLibrary(R.matlab)
-    sfLibrary(pracma)
-
-    Tall0 = Tall[!is.na(Tall)]
-    grid_T1 = grid_T[grid_T >=min( Tall0 )]
-    n_s <- sum(!is.na(Tall))
-
-    # X = Xall[!is.na(Tall),,]
-    # Y = matrix(Yall[!is.na(Tall),], sum(!is.na(Tall)), dim(Yall)[2])
-    # Tinf0 = Tinf[!is.na(Tall)]
-    # Call10 = matrix(Call1[!is.na(Tall),], sum(!is.na(Tall)), 1)
-
-
-    for_average = vector("list")
-
-    #
-    # ti0=1
-    # ci =1
-    count = 1
-    for(ci0 in 1:nb_clust){
-      for(ti0 in 1:length(grid_T1)){
-
-        T = grid_T1[ti0]
-        ci = civals[ci0]
-        selecti = Tinf==T & Call1==ci & !is.na(Tall)
-
-        Y = matrix(Yall[selecti,1:T], sum(selecti) , T )
-        X = array(Xall[selecti, 1:T ,], c(sum(selecti), T ,dimX))
-        Tall0 <- Tall[selecti]
-
-        # % Compute the influence function of beta_hat. Useful for inference on
-        # % Delta, at the end.
-        phi  = phi_b[selecti,]
-
-        n <- dim(X)[1]
-        T <- dim(X)[2]
-
-
-        if(length(dim(X))==3){
-          dimX = dim(X)[3]
-        }else{
-          dimX=1
-        }
-
-        T_minus_t = repmat(T - (0:T),n,1);
-        S = apply(Y,1,sum)
-
-        # dim(  X)
-        # if( length(dim(X)) ==3){
-        #   XT =  matrix(X[,T,],n,dimX)
-        # }else{
-        #   XT = matrix(X[,T],n,dimX)
-        # }
-
-        XT =  matrix(NA,n,dimX)
-        if( length(dim(X)) ==3){
-          # XT = matrix(X[,Tall,],n,dimX)
-          for (ti in grid_T0){
-            if(sum(Tall0==ti)>0){
-              XT[Tall0==ti,] =  matrix(X[Tall0==ti,ti,],sum(Tall0==ti),dimX)
-            }
-          }
-        }else{
-          # XT = matrix(X[,Tall],n,dimX)
-          for (ti in grid_T0){
-            if(sum(Tall0==ti)>0){
-              XT[Tall0==ti,] = matrix(X[Tall0==ti,ti],sum(Tall0==ti),dimX)
-            }
-          }
-        }
-
-        #
-        # # % Parameter used to compute numerical derivatives wrt beta and gamma
-        hderiv=1e-3;
-        #
-
-        # % Initialisation
-        C_mat = zeros(n,T+1);
-        PSt_X = zeros(n,T+1);
-        # % Step 1: CMLE
-        # options=optimoptions('fminunc','Display','off');
-        # b_hat = optim(par = beta0, log_lik_FE_logit,Y=Y,X=X)$par
-
-
-        index = zeros(n,T)
-
-        # % Step 2: bounds on the AME
-
-        # % We first need nonparametric estimators of mt(x).
-        # % We use mt(x)=ct(x)/c0(x) for t\geq 0, with (c0(x),...,cT(x))'
-        # % = A x (Pr(S=0|X=x)/C0(x;beta0),...,Pr(S=T|X=x)/CT(x;beta0).
-
-        ## test if X of dim > 2
-        if(length(dim(X))==3){
-          for ( t in 1:T){
-            index[,t] = X[,t,]%*%matrix(b_hat);
-          }
-        }else{
-          index = X*b_hat;
-        }
-
-        # % Intercept assuming that Y_T on X_T is a logit: used for the
-        # % computation of the bandwidth below
-        if(length(dim(X))==3){
-          intercept = estim_intercept(Y,index);
-        }else{
-          intercept = estim_intercept(Y,index);
-        }
-
-        index_int = intercept + index;
-        V = exp(index);
-
-        # %% Computation of the bandwidth for local linear estimation.
-        # % We fix h so that estimated avg absolute bias = ratio * estimated
-        # % avg asymp. std dev. To estimate both, we assume that the fixed
-        # % effect is actually constant (and then estimated by intercept).
-
-
-        # % Uniform draws on Supp(X). Used below to get the bandwidth.
-
-        n_mx = 2000
-        mx= array(0,c(n_mx,T,dimX))
-        scaling = matrix(1,dimX,T)
-        for(k in 1:dimX){
-          # Fx = matrix(quantile(X[,,k],  probs = rand( n_mx,T)) ,n_mx,T)
-          # mx[,,k] = Fx
-          scaling[k,] = (apply(matrix(X[,,k],n,T),2,max)-apply(matrix(X[,,k],n,T),2,min))
-          mx[,,k] = as.matrix(rep(1,n_mx))%*%apply(matrix(X[,,k],n ,T ),2,min)+ (as.matrix(rep(1,n_mx))%*%scaling[k,]) * rand(n_mx,T)
-        }
-
-        scaling0 = prod(c(scaling))
-
-        randunif_x =mx;
-        index_bis= matrix(0,n_mx,T)
-        for(k in 1:dimX){
-          index_bis = index_bis + matrix(randunif_x[,,k] * b_hat[k],n_mx,T);
-        }
-
-        # t = 2
-        # ratio = 1/100
-        h = zeros(1,T+1);
-        for (t in 0:T){
-          C_mat[,t+1] = C_S_fun(t,V);
-          # % Computation of the avg std dev: (R(k)^q int sigma^2(x)dx/n)^{1/2}
-          # % (see Hansen's notes). We use the uniform draws above. The
-          # % estimator is an average of sigma^2(x) over these draws
-          mean_approx_St = exp(t*intercept)*apply(1-Lambda(intercept+index_bis),1,prod)* C_S_fun(t,exp(index_bis));
-          std_approx_St = scaling0*sqrt(RK^(dimX*T) * mean(mean_approx_St*(1-mean_approx_St))/n);
-
-          # % Computation of the average absolute bias
-          mean_approx_St = exp(t*intercept)*apply(Lambda(index_int),1,prod)*C_mat[,t+1];
-
-          d0c = dim(Lambda(index_int))[2]
-          d0r = dim(Lambda(index_int))[1]
-
-          term1 = matrix(0,d0r, d0c)
-          term2 = matrix(0,d0r, d0c)
-
-
-          if (t==0){
-            deriv_log_C = 0;
-            for(k in 1:dimX){
-              term1 = term1 +  (deriv_log_C + b_hat[k] * Lambda(index_int))^2;
-              term2 = term2 + deriv_log_C*(b_hat[k] - deriv_log_C) + b_hat[k]^2*Lambda(index_int,1);
-            }
-
-          }else{
-            bbx = V* (matrix(C_mat[,t])%*%rep(1,dim(V)[2])) #bsxfun(@times, V,  C_mat[,t])
-            for(k in 1:dimX){
-              deriv_log_C = b_hat[k] * ( bbx / (matrix(C_mat[,t+1])%*%rep(1,dim(bbx)[2])))  # bsxfun(@rdivide, ,C_mat[,t+1]);
-              term1 =  term1 + (deriv_log_C + b_hat[k] * Lambda(index_int))^2;
-              term2 =  term2 + deriv_log_C*(b_hat[k] - deriv_log_C) + b_hat[k]^2*Lambda(index_int,1);
-            }
-
-          }
-
-          bias_approx_St = sum(mean(abs( (as.matrix(mean_approx_St)%*%rep(1,dim(term1)[2]))*(term1+term2))));
-
-          # % Choice of the bandwidth
-          h[1,t+1] = (std_approx_St / (sqrt(ratio)*bias_approx_St))^(1/(2+dimX*T/2));
-          # h[1,t+1] = (ratio*std_approx_St / bias_approx_St)^(1/(2+dimX*T/2));
-        }
-
-
-        # t=2
-        for (t in 0:T){
-          St = matrix((S==t)*1);
-          if(t==T){
-            out =  local_lin(St,X,h[,t+1]);
-            ES_T = out[[1]]
-            f= out[[2]]
-          }else{
-            out = local_lin(St,X,h[,t+1]);
-            ES_T = out[[1]]
-          }
-          PSt_X[,t+1] = pmin(pmax(ES_T,0),1);
-        }
-
-        ### case PSt_X==0
-        temp0 = rowSums(abs(PSt_X))
-        totreat = (1:dim(PSt_X)[1])[temp0==0]
-
-        if(length(totreat)>0){
-
-          # i0=1
-          for(i0 in 1:length(totreat)){
-            i1 = totreat[i0]
-            values = matrix(0,dim(X)[1], 1)
-            for(k in 1:dimX){
-              values =  values + rowSums((X[,,k]-matrix(1,dim(X)[1],1)%*%X[i1,,k])^2)
-            }
-
-            nonzero <- cbind(values,!(temp0==0), 1:dim(PSt_X)[1])
-            nonzero0 <- nonzero [nonzero[,2]==1,]
-            ref = nonzero0 [which.min(nonzero0 [,1]),]
-            i00 = ref[3]
-
-            PSt_X[i1,] = PSt_X[i00,]
-          }
-        }
-
-        # % Normalization: to be sure that the probabilities sum to 1.
-        # PSt_X = bsxfun(@rdivide, PSt_X, sum(PSt_X,2));
-        PSt_X = PSt_X / (matrix(apply(PSt_X,1,sum))%*%rep(1,dim(PSt_X)[2]));
-
-        T_minus_t = repmat(T - (0:T),n,1);
-
-
-        # deriv_gamma_all = vector("list")
-        # version ="new"
-        # s=1
-        # if(version == "new"){
-
-
-        # # % Computation of the bounds and Pr(Ihat(m_i)=I(m_i))
-        out =  Delta_bounds(b_hat, V, S, dimX, PSt_X, f, h,mat_C_k_T[[T]], RK, T_minus_t,Tall0,X)
-        boundsall[[count]] = out[[1]]
-        bounds = out[[1]]
-        bounds_ind = out[[2]]
-        c_hat = out[[3]]
-
-
-        # % Computation of the influence function
-        Z_EZX = matrix(S)%*%rep(1,T+1)==(matrix(rep(1,length(S)))%*%t(matrix(0:T))) -  PSt_X;
-
-        # k=1
-        for(k in 1:dimX){
-          deriv_beta = zeros(dimX,2);
-          # i=1
-          for (i in 1:dimX){
-            out = Delta_bounds(b_hat+hderiv*((1:dimX)==i),V, S, dimX, PSt_X, f, h,mat_C_k_T[[T]], RK, T_minus_t,Tall0,X);
-            for_deriv_b= out[[1]]
-            # bounds_ind = out[[2]]
-            # tx_class[s] = out[[3]]
-            deriv_beta[i,]= (for_deriv_b[k,] - bounds[k,])/hderiv;
-          }
-
-          deriv_gamma = zeros(T+1,2)
-
-          for (t in 0:T){
-            out = Delta_bounds(b_hat, V, S, dimX, PSt_X+hderiv*ones(n,1)%*%((0:T)==t), f, h, mat_C_k_T[[T]], RK, T_minus_t,Tall0,X)
-            for_deriv_g <- out[[1]]
-            deriv_gamma[t+1,] = (for_deriv_g[k,] - bounds[k,] )/hderiv;
-          }
-
-          # % Term corresponding to the influence of the nonparametric
-          # % estimation of the Pr(S=t|X)
-          # if(is.null(infl[k])){
-          # infl[[k]] = rbind( bounds_ind[,k] + phi %*% deriv_beta + Z_EZX %*% deriv_gamma)
-          # }else{
-          infl[[k]][selecti ,] =  bounds_ind[,k] + phi %*% deriv_beta + Z_EZX %*% deriv_gamma
-          # dim(bounds_ind[,k] + phi %*% deriv_beta + Z_EZX %*% deriv_gamma)
-          # dim( infl[[k]])
-          # }
-        }
-        count=count+1
-
-
-
-
-      } ### end of T_i loop
-    }
-
-    sfStop()
-
-    count=1
-    Delta_hat= matrix(0, nb_var,2)
-    for(ci0 in 1:nb_clust){
-      for(ti in grid_T1){
-
-
-        ci = civals[ci0]
-        selecti = Tinf==T & Call1==ci & !is.na(Tall)
-
-        Delta_hat=  Delta_hat+ boundsall[[count]][selectX,]*sum(selecti)/n_s
-        count=count+1
+    indl_estimates[["indl_infl_func_delta"]] <- infl_func_delta
+
+    # Check the sign of each beta, to revert the columns to the correct answer if it is negative
+    for (i in 1:length(selectX)) {
+      k <- selectX[i]
+      if (beta_hat[k] < 0) {
+        average_bounds_on_delta[i,] <- average_bounds_on_delta[i, c(2, 1)]
+        indl_estimates$indl_bounds_on_delta[,, i] <- indl_estimates$indl_bounds_on_delta[, c(2, 1), i]
+        indl_estimates$indl_infl_func_delta[,, i] <- indl_estimates$indl_infl_func_delta[, c(2, 1), i]
       }
     }
-
-
-    for_average = vector("list")
-    count=1
-    Delta_hat0= matrix(0, nb_var,2)
-    for(ci0 in 1:nb_clust){
-      for(ti in grid_T1){
-
-        ci = civals[ci0]
-        selecti = Tinf==T & Call1==ci & !is.na(Tall)
-
-        Delta_hat0=  Delta_hat0 + boundsall[[count]][selectX,]*sum(selecti)/(n_s*ti)
-        count=count+1
-      }
-    }
-    for_average[[1]] <- Delta_hat0
-
-
-
-    # Delta_hat[,1] - length_CI/2
-    length_CI= matrix(NA,1, nb_var)
-    et=matrix(NA,dimX,2)
-    for(k in selectX){
-      et[k,] =apply(infl[[k]][!is.na(Tall),],2,std)/sqrt(n_s);
-    }
-    et=matrix(et[selectX,], nb_var,2)
-    bias_sup = matrix(0,2,1)
-
-    # stop =  Sys.time()
-    # time =  start_time -stop;
-
-    CI = matrix(NA, nb_var,2)
-
-    ## compute CI at level alpha.
-    # k=1
-    for(k in 1: nb_var){
-      quant = quantile_IM(alpha, Delta_hat[k,], et[k,]);
-
-      # phi_alpha=1{sqrt(n)|beta hat_k|/std(phi_k)>q_{1-alpha/2}}
-      phi_alpha = sqrt(n_s)*abs(b_hat[k])/std(infl[[k]])> qnorm(1-alpha/2)
-      if(phi_alpha){
-        CI[k,] = cbind(Delta_hat[k,1] - quant* et[k,1], Delta_hat[k,2] + quant*et[k,2]);
-      }else{
-        CI[k,] = cbind(min(0,Delta_hat[k,1] - quant* et[k,1]), max(0,Delta_hat[k,2] + quant*et[k,2]));
-      }
-
-      phi_alpha_m[k] = phi_alpha*1
-      length_CI[k] = CI[k,2] - CI[k,1]
-
-    }
-
-    std_b = apply(phi_b,2,std)/sqrt(dim(phi_b)[1])
-    # CI = cbind(bounds[,1] - quant* std_bounds[,1], bounds[,2] + quant*std_bounds[,2]);
-
   }
 
-  end_time <- Sys.time()
-  time = end_time - start_time
+  # Stop monitoring the computation time
+  endTime <- Sys.time()
+  time <- difftime(endTime, startTime, units = "secs")
 
 
   out <- vector("list")
   out[[1]] <- Option
-  out[[2]] <- n_s
-  out[[3]] <- grid_T1
-  out[[4]] <- as.numeric(time)
-  out[[5]] <- Delta_hat
-  out[[6]] <- length_CI
-  out[[7]] <- et
-  out[[8]] <- bias_sup
-  out[[9]] <- CI
-  out[[10]] <- phi_alpha_m
-  out[[11]] <- b_hat
-  out[[12]] <- std_b
-  out[[13]] <- infl
-  out[[14]] <-  for_average
-  out[[15]] <-  c_hat
+  out[[2]] <- nbIndls
+  out[[3]] <- as.numeric(time)
+  out[[4]] <- average_bounds_on_delta
+  # We return the two confidence intervals for the outer bounds
+  if (Option == "quick") {
+    if (CIOption == "CI2") {
+      out[[5]] <- CI2
+      out[[6]] <- CI3
+    }
+    else {
+      out[[5]] <- CI3
+      out[[6]] <- CI2
+    }
+  } else {
+    out[[5]] <- CI
+    out[[6]] <- NA
+  }
+  out[[7]] <- indl_estimates
 
-  names(out) <- c("Option","n","Tmax","Time","Delta_hat","length_CI","et","bias_sup","CI","phi_alpha","b_hat","std_b","influence","for_average","c_hat")
+  names(out) <- c("Option", "reducedSampleSize", "computationTime", "estimatedAMEbounds", "CI", "alt_CI", "indl_estimates")
 
   return(out)
 }

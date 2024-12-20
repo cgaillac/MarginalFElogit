@@ -5,80 +5,119 @@
 \title{This function implements the estimators of the bounds on the AME/ATE proposed in DDL.}
 \usage{
 felogit(
-  formul = NULL,
   data,
+  formul = NULL,
   Option = "quick",
-  compute_X = NULL,
-  compute_T = NULL,
+  compute_X = "all",
+  compute_T = "all",
   cluster = NULL,
   alpha = 0.05,
   CIOption = "CI2",
   nbCores = 4,
-  ratio = 10
+  varY = "Y",
+  varX = NULL
 )
 }
 \arguments{
-\item{formul}{an object of class "formula": a symbolic description of the model to be fitted.
-Models for felogit are specified symbolically. A typical model has the form "response ~ terms`" where response is the (numeric) response vector
-and terms is a series of terms which specifies a linear predictor for response. Note that predictors which are constant over time are discarded.}
+\item{data}{is an environment variable containing the data. It can either be
+in long format or in wide format. If in long format, data should be a data
+frame with individual indexes in the first columns, periods in the second
+column, and in the remaining columns the value of each variable at the
+corresponding period for the corresponding individual. All columns should
+be named. If in wide format, data should be a list or environment variable
+containing:
+- data$Y is a matrix of size n x Tmax containing the values of the dependent variable Y
+for each individual at each period. NAs represent missing observations.
+- data$X is an array of size n x Tmax x dimX containing the values of the covariates X
+for each individual at each period. NAs represent missing observations.
+- data$clusterIndexes is a vector of size n x 1 that specifies the cluster each
+observation pertains to. If it does not exist, the function enforces the default
+setting of i.i.d. observations - the parameter takes value 1:n so that each
+observation is its own cluster.}
 
-\item{data}{a data frame containing the panel data in long, i.e., one line for one individual-time observation.
-The first column must be the individual identifier and the second column the temporal one. It can contains NA, which are treated as explained in the vignette.}
+\item{formul}{(default NULL) is a formula used when the data is in long format
+to specify which variable to use. It must be of the form formula("Y ~ X_1 + X_2")
+where Y is the name of the binary variable of interest and X_1, X_2, etc are
+the variables to use in the logit model. Set formul to NULL to indicate the
+data is already in wide format.}
 
-\item{Option}{the method chosen to compute the AME/ATE, either "sharp" or "quick". Default is ``quick".}
+\item{Option}{(default "quick") Estimation method to be used. If "quick" or
+"outer" (case-insensitive) the outer bounds are computed. Otherwise, the sharp
+bounds are computed. If any of the variable with respect to which the effect is
+being measured is binary (so that an ATE must be computed), we always switch to
+the quick method for efficiency reasons. In general, we recommend using the
+outer bounds method if the number of covariates is at least three, if the
+number of periods observed is four or more, or if the sample size is small
+(less than 500) or large (more than 10^4).}
 
-\item{compute_X}{the vector of selected covariates to compute the AME/ATE. If NULL then bounds are computed for all covariates. NULL by default.}
+\item{compute_X}{(default "all") is a vector containing all the variables with
+respect to which the AME/ATE must be computed. It can either contain the
+variable names, as given in the arguments formul or varX, or their rank, e.g.
+3 for the third variable appearing in formul/varX or, for lack theoreof, the third
+column in data$X.}
 
-\item{compute_T}{the vector of selected periods to compute the AME/ATE.
-If NULL, then as described in Section 5.4 of DDL, AME/ATE are computed at the minimum of  supp(T). If specified to ``all",
-AME/ATE are computed at all available periods but the average over the latter is also computed. Default is NULL.}
+\item{compute_T}{(default "all") is a vector containing all periods at which
+the AME/ATE must be computed. Alternatively, it can be "all", in which case the
+AME/ATE will be computed successively at every period and, on top of that, the
+average AME/ATE across all periods will also be computed using the function
+compute_average_AMTE. Also note that non-positive values will be counted
+backwards from the last period at which each individual is observed, as in
+an event-study. If NULL, the first period is used. Periods MUST be specified
+by their rank (1 for first period, etc) and NOT by value (e.g. 1980 for the
+year).}
 
-\item{cluster}{the vector of identifiers for the clusters if any.  Default is NULL.}
+\item{cluster}{is clustering}
 
-\item{alpha}{the confidence level for the confidence intervals. Default is 5\%.}
+\item{alpha}{(default 0.05) desired asymptotic level of the estimated
+confidence intervals}
 
-\item{CIOption}{the option for the choice of the type of confidence intervals for the "quick" method, either "CI2" or "CI3". Default is ``CI2".}
+\item{CIOption}{(default "CI2") When the outer bounds method is being used,
+specifies which confidence interval should be used. If "CI2", the CI2
+confidence interval is being used (see DDL, section 4.2), otherwise the CI3
+confidence interval will be used (see DDL, appendix C). We recommend using
+CI3 only if the user suspects the FE logit model may be a severely
+misspecified model for the data.}
 
-\item{nbCores}{the number of cores used by the program to compute the AME for the "sharp" method.}
+\item{nbCores}{(default 4) number of cores to be used for parallel computing,
+to speed up the estimation of the sharp bounds.}
 
-\item{ratio}{the ratio R in DDL for the nonparametric estimator of the conditional moments of S
-To reduce the computational time, this function can use several cores, in which case the library snowfall should be loaded first. By default, nbCores is set to 4.}
+\item{varY}{(default "Y") for data already in wide format, the name of the
+binary variable of interest in the data list/environment.}
+
+\item{varX}{(default NULL) for data already in wide format, the name to use
+for each of the variables given by the slices of the array data$X along
+the third dimension. dimnames(data$X) along the third dimension can also be
+used. If varX is NULL and no name is given in dimnames(data$X), X_1, X_2, etc
+will be used.}
 }
 \value{
 A list containing:
-
  - summary: a dataframe containing the estimation results,
-
  - n: the number of used individuals,
-
  - ndiscard: the number of discarded individuals,
-
- - Tmax: the maximal number of periods of observed,
-
+ - Tmax: the total number of distinct periods of observed,
  - vardiscard: the label of the discarded variables,
-
- - formul: the formula used,
-
+ - formul: the formula used (implicitly deduced if the input was NULL),
  - alpha: the level used for the confidence intervals,
-
- - Option: the method which is used.
-
- - summary_CMLE : a dataframe containing the estimation results of the CMLE
+ - Option: the method used,
+ - summary_CMLE : a dataframe containing the estimation results of the CMLE.
 }
 \description{
-The function summary_felogit applied to the output of this felogit function prints the table containing the estimation results.
+The function summary_felogit applied to the output of this felogit function prints
+the table containing the estimation results.
 }
 \examples{
 library(pglm)
-data('UnionWage', package = 'pglm')
+data("UnionWage", package = "pglm")
 
-UnionWage$union = (UnionWage$union =="yes")*1
-UnionWage$rural = (UnionWage$rural =="yes")*1
-UnionWage$black = (UnionWage$com =="black")*1 # used as test for discarded variable because constant
-UnionWage$NorthEast =(UnionWage$region =="NorthEast")*1
-sub <- UnionWage[UnionWage$year <1986,]
-formul = as.formula(union ~  exper + married +black )
-output <- felogit(formul , data= sub, Option  ="quick", compute_T =  NULL )
+UnionWage$union <- UnionWage$union == "yes"
+UnionWage$rural <- UnionWage$rural == "yes"
+UnionWage$black <- UnionWage$com == "black" # used as test for discarded variable because constant
+UnionWage$NorthEast <- UnionWage$region == "NorthEast"
+sub <- UnionWage[UnionWage$year < 1986,]
+
+formul <- formula("union ~ exper + married + black")
+output <- felogit(data = sub, formul = formul, Option = "quick", compute_T = NULL)
 summary_felogit(output)
 
 }

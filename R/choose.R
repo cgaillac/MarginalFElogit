@@ -1,19 +1,27 @@
-#' Compute C(n,k) with n and k scalars
-#' Allows for negative k or n<k (then returns 0)
+#' Takes input n, k and returns n choose k
 #'
-#' @param n scalar in the combinatorial numers C(n,k)
-#' @param k scalar in the combinatorial numers C(n,k)
+#' @param n number of elements to choose from
+#' @param k number of elements to choose
 #'
-#' @return the value of C(n,k)
+#' @return n choose k
 #' @export
 #'
 # @examples
-choose <- function(n,k){
-  num = factorial(n)
-  denom1 = factorial(abs(k))
-  denom2 = factorial(abs(n-k))
+choose <- function(n, k) {
 
-  res = (num/(denom1*denom2))*(k<=n & k>=0)
-return(res)
+  # We use n choose k = n! / (k! (n-k)!)
+  k <- min(k, n - k)
+  if ((n < 0) | (k < 0) | (k > n)) {
+    stop("Error : n choose k requires k between 0 and n and n positive")
+  }
+  else if (k == 0) {
+    nchoosek <- 1
+  }
+  else {
+    nchoosek <- prod(((n - k + 1):n)/(1:k))
+    nchoosek <- round(nchoosek) # In case numerical computation does not give an exact integer
+  }
+
+  return(nchoosek)
 }
 

@@ -2,25 +2,58 @@
 % Please edit documentation in R/best_approx_poly.R
 \name{best_approx_poly}
 \alias{best_approx_poly}
-\title{This function returns the coefficients (functions of v=exp(x'beta0)) of
-the best (in the uniform sense) approximation  of Omega(.,x) by a
-polynomial of degree T.}
+\title{This function returns the coefficients (functions of V = exp(X'beta)) of
+the best (in the uniform sense) approximation  of Omega(·, x, beta) * h(·, x, beta)
+by a polynomial of degree at most T. It also returns the coefficients of the original
+polynomial, its top coefficients, and the derivative of the coefficients of the
+approximating polynomials with respect to beta.
+See Assumption 3 in DDL and the discussion under that assumption for the exact formulae
+of the functions. Here, we ignore the beta factor at the start, and use the h
+corresponding to the AME, unless forATE is TRUE.}
 \usage{
-best_approx_poly(Vtilde_min1, grid_T1, Tinf0)
+best_approx_poly(Vtilde, Xtilde, forATE = FALSE, signFactorCoeffshATE = NULL)
 }
 \arguments{
-\item{Vtilde_min1}{is the vector of coefficients exp((x-x_T)'beta0)-1 appearing
-in Omega}
+\item{Vtilde}{a matrix of size n x Tmax containing the exp((x-x_t)'beta) for
+each observation, t being the period at which the AME is being computed. For the
+ATE, we want Vtilde = exp(x'beta - v(x, beta)).}
 
-\item{grid_T1}{a vector containing the different values of the maximal number of periods observed}
+\item{Xtilde}{an array of size n x Tmax x dimX containing, for each observation,
+X - X_t where t is the period at which the AME is being computed. For the ATE we
+want X - X_t^(1 - X_tk) (i.e. the second term is the same as X_t except the k_th
+coordinate changes from 0 to 1 or from 1 to 0).}
 
-\item{Tinf0}{a vector of size nx1 containing the number of periods observed for each individual}
+\item{forATE}{(default FALSE) If TRUE, we return the formula used for the ATE
+instead of for the AME.}
+
+\item{signFactorCoeffshATE}{(default NULL) The sign to multiply the function h by
+in the ATE case. This parameter is unnecessary for the AME.}
 }
 \value{
-the coefficients of the best approximation of Omega(.,x) by polynomial of degree T.
+a list containing:
+ - bestPoly: a matrix of size n x (Tmax + 1) where each row represents the
+   coefficient of the best approximation polynomial of Omega(., x, beta).
+   Coefficients start with the constant coefficient, and there are
+   (Tobsd[i] + 1) coefficients on each row, where Tobsd[i] is the number
+   of periods observed for the relevant individuals. Subsequent entries on
+   the rows are 0s
+ - topCoeffOmega: a vector of length n containing the top coefficient of the
+   original Omega coefficient for each individual.
+ - derivCoeffsOmegaDbeta: derivative of the coefficients stored in bestPoly
+   relative to beta.
+ - coeffsOmega: a matrix of size n x (Tmax + 2) where each row represents the
+   coefficient of the polynomial Omega(., x, beta). Coefficients start with
+   the constant coefficient and there are (Tobsd[i] + 2) coefficients on each row
+   where Tobsd[i] is the number of periods observed for the relevant
+   individuals. Subsequent entries on the rows are 0s.
 }
 \description{
-This function returns the coefficients (functions of v=exp(x'beta0)) of
-the best (in the uniform sense) approximation  of Omega(.,x) by a
-polynomial of degree T.
+This function returns the coefficients (functions of V = exp(X'beta)) of
+the best (in the uniform sense) approximation  of Omega(·, x, beta) * h(·, x, beta)
+by a polynomial of degree at most T. It also returns the coefficients of the original
+polynomial, its top coefficients, and the derivative of the coefficients of the
+approximating polynomials with respect to beta.
+See Assumption 3 in DDL and the discussion under that assumption for the exact formulae
+of the functions. Here, we ignore the beta factor at the start, and use the h
+corresponding to the AME, unless forATE is TRUE.
 }

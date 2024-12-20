@@ -2,94 +2,119 @@
 % Please edit documentation in R/compute_ATE_t.R
 \name{compute_ATE_t}
 \alias{compute_ATE_t}
-\title{Function which compute the ATE at a specified value of T contained in Tall.}
+\title{Computes the bounds on the ATE on the dataset, at the period given in input,
+and using the method specified as entry parameter.}
 \usage{
 compute_ATE_t(
-  Yall,
-  Xall,
-  prop_T,
-  grid_T,
-  n_dist,
-  Tmax,
-  Tall,
-  Tinf,
-  Call1,
-  mat_C_k_T,
-  cheb_coeff,
-  b_hat,
-  alpha,
-  CIOption,
-  Option,
-  dimX,
-  selectX,
-  phi_b,
-  std_b
+  data,
+  TEstim,
+  estimators = env(),
+  other_numbers = env(),
+  selectX = NULL,
+  Option = "quick",
+  CIOption = "CI2",
+  alpha = 0.05,
+  nbCores = 4
 )
 }
 \arguments{
-\item{Yall}{matrix n x T containing the values of the dependent variable Yt.}
+\item{data}{is an environment variable containing the data. If not already
+formatted, it will be formatted by the format_data function (see its
+documentation for information about the stored variables). It must contain at
+least:
+- data$Y is a matrix of size n x Tmax containing the values of the dependent variable Y,
+- data$X is an array of size n x Tmax x dimX containing the values of the covariates X
+- data$clusterIndexes is a vector of size n x 1 that specifies the cluster each
+observation pertains to. If it does not exist, the function enforces the default
+setting of i.i.d. observations - the parameter takes value 1:n so that each
+observation is its own cluster.}
 
-\item{Xall}{array of dimensions n x T x dimX containing the values of the predictors at the different periods.}
+\item{TEstim}{is a scalar specifying the period at which the effect must be
+estimated. It can also be a vector of length n if the period at which the
+ATE must be estimated depends on the individual (e.g. in event-studies models).}
 
-\item{prop_T}{a vector containin the proportions of the different numbers of periods observed in the dataset.}
+\item{estimators}{(default empty environment) is an environment in which the
+results of the CMLE estimation and of the non-parametric estimation of the
+conditional distribution of S will be stored. That way, if an input is
+specified, these numbers will not need to be computed again if compute_AME_t
+is called another time, as the same environment can be passed in input again.
+Results are stored as follows:
+- estimators$beta_hat, a list which contains the results from CMLE
+estimation:
+- estimators$beta_hat$beta_hat a vector of length dimX, the
+estimated value for the slope parameter.
+- estimators_beta_hat$phi_b a matrix of size n x dimX containing
+the value of the influence function at each observation (rows) w.r.t.
+each dimension of the covariates (columns).
+- estimators$beta_hat$var_b the estimated asymptotic covariance
+matrix, of size dimX x dimX, for the estimator beta_hat.
+- estimators$h_local_lin_proba a vector of length (Tmax + 1) containing,
+in j-th position, the bandwidth used to estimate the P(S = j - 1 | X)'s.
+- estimators$condlProbas: a matrix of size n x (Tmax + 1) containing,
+in position (i, j), the estimate for P(S = j - 1 | X) at the i-th
+observation.
+- estimators$densityEstimate a matrix of size n x (Tmax + 1) containing,
+at each row (individual), the estimated density for having covariates
+(X_1, ..., X_T). Each column represents the value found using the
+corresponding bandwidths from h.}
 
-\item{grid_T}{a vector containing the different numbers of periods observed in the dataset.}
+\item{other_numbers}{(default empty environment) is an environment variable
+in which the variable other_numbers$comb_numbers is stored. A matrix of size
+(Tmax + 1) x (Tmax + 1) containg in position (i, j) the number (i choose j).
+If j > i the value is NA.}
 
-\item{n_dist}{a vector containing the number of individuals which are observed for T periods, where T is given in grid_T}
+\item{selectX}{(default NULL) a vector containing the indices of the
+covariates w.r.t. which the ATE must be computed. If null, the ATE w.r.t. all
+covariates will be computed. All variables of interest should be given in the
+same call, as then there will be no additional cost relative to estimating
+w.r.t. only one covariate.}
 
-\item{Tmax}{the maximal number of periods observed in the dataset}
+\item{Option}{(default "quick") Estimation method to be used. If "quick" or
+"outer" (case-insensitive) the outer bounds are computed. Otherwise, the sharp
+bounds are computed. We recommend using the outer bounds method if the number
+of covariates is at least three, if the number of periods observed is four or
+more, or if the sample size is small (less than 500) or large (more than 10^4).}
 
-\item{Tall}{vector of size n x1 containing the specified values of T where we compute the ATE.}
+\item{CIOption}{(default "CI2") When the outer bounds method is being used,
+specifies which confidence interval should be used. If "CI2", the CI2
+confidence interval is being used (see DDL, section 4.2), otherwise the CI3
+confidence interval will be used (see DDL, appendix C).}
 
-\item{Tinf}{vector of size n x1 containing the number of periods observed for each individual.}
+\item{alpha}{(default 0.05) desired asymptotic level of the estimated
+confidence intervals}
 
-\item{Call1}{matrix n x 1 containing the identifiers of the clusters to which each individual belongs. Default is NULL}
-
-\item{mat_C_k_T}{a matrix containing the combinatorial numbers.}
-
-\item{cheb_coeff}{the coefficients of the Chebyshev polynomials T_n.}
-
-\item{b_hat}{the estimated value of beta0 using the conditional maximum likelihood estimator.}
-
-\item{alpha}{the confidence level for the confidence intervals. Default is 5\%.}
-
-\item{CIOption}{the option for the choice of the type of confidence intervals for the quick method, either CI2 or CI3. Default is CI2.}
-
-\item{Option}{chosen method to compute the ATE: either sharp or quick. Default is quick.}
-
-\item{dimX}{the number of covariates}
-
-\item{selectX}{the selected covariate to compute the ATE (one by one)}
-
-\item{phi_b}{the matrix of size n x dimX containing the inflence function of the  conditional maximum likelihood estimator of beta.}
-
-\item{std_b}{the estimated standard deviation of the inflence function of the  conditional maximum likelihood estimator of beta.}
+\item{nbCores}{(default 4) number of cores to be used for parallel computing,
+to speed up the estimation of the sharp bounds.}
 }
 \value{
-A list containing the values of : Option, n, Tmax, Time (computational time),
-
- - Delta_hat: either the estimator of the bounds on Delta (sharp method) or the approximation of Delta (quick method);
-
- - length_CI: the length of the confidence intervals;
-
- - et: the estimated standard error of the influence function(s), either of the two bounds on Delta (sharp method) or of
- the approximation of Delta (quick method);
-
- - bias_sup: the estimated upper bound on the bias (quick method);
-
- - CI: the confidence intervals at the alpha level;
-
- - phi_alpha: the phi alpha statistic intervening in the computation of the confidence interval of the sharp method;
-
- - b_hat: the estimated value of beta0 using the conditional maximum likelihood estimator;
-
- - std_b: the estimated standard deviation of the inflence function of the  conditional maximum likelihood estimator of beta;
-
- - influence: the matrix of size n x dimX containing the inflence function of the  conditional maximum likelihood estimator of beta;
-
- - for_average: a list containing the estimated values of Delta(x) and the influence function weighted by the values of Tinf, to compute the
- average of the AME over all the observed periods.
+a list containing:
+ - Option: same as input
+ - reducedSampleSize: the number of individuals used to estimate the ATE. The
+   individuals that were not observed at the period for which the ATE should
+   be computed were excluded.
+ - computationTime: the time (in seconds) taken to perform the computation
+ - estimatedAMEbounds: a matrix of size |selectX| x 2 containing the estimated
+   (sharp or outer, depending on Option) bounds on the ATE, for each covariate
+   in selectX.
+ - CI: a matrix of size |selectX| x 2 containing in each row the estimated
+   confidence interval for the ATE, for the corresponding covariate in selectX.
+ - alt_CI: a matrix of size |selectX| x 2 containing in each row the estimated
+   confidence interval for the AME, for the corresponding covariate in selectX,
+   using the confidence interval option NOT requested by the user, for the outer
+   bounds. If the sharp bounds were being computed, this output is NA.
+ - indl_estimates: a list containing the bounds and influence functions for
+   individual observations. They will be used to estimate the average ATE
+   over all periods. They are organised as follows:
+ - indl_estimates$indl_bounds_on_delta is a matrix of size n x 2 x dimX
+   containing the estimated lower and upper bounds on the ATE, for each
+   individual observation. It is NA for the individuals unobserved at the
+   requested period.
+ - indl_estimates$indl_infl_func_delta is a matrix of size n x 2 x dimX
+   containing the estimated value of the influence function for the lower and
+   upper bounds on the ATE, for each individual observation. It is NA for the
+   individuals unobserved at the requested period.
 }
 \description{
-Function which compute the ATE at a specified value of T contained in Tall.
+Computes the bounds on the ATE on the dataset, at the period given in input,
+and using the method specified as entry parameter.
 }

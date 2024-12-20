@@ -2,22 +2,25 @@
 % Please edit documentation in R/infl_func_beta.R
 \name{infl_func_beta}
 \alias{infl_func_beta}
-\title{Compute the influence function of beta hat: E(d^2ln L/dbeta^2)^{-1}  x (ln L/dbeta)(Yi|Xi,beta).}
+\title{Computes the influence function of beta_hat:
+    E(d^2ln L/dbeta^2)^{-1}  x (dln L/dbeta)(Yi|Xi,beta)).}
 \usage{
-infl_func_beta(beta, Y, X, Call = NULL)
+infl_func_beta(beta, data)
 }
 \arguments{
-\item{beta}{the parameter at which the influence function is computed}
+\item{beta}{the parameter at which the influence function is computed.}
 
-\item{Y}{a matrix of size nxT containing the values of the dependent variable Y}
-
-\item{X}{an array of size nxTxdimX containing the values of the covariates X}
-
-\item{Call}{a vector of size n containing the indexes of the hypothetical clusters for the individuals}
+\item{data}{is an environment variable containing the relevant data:
+- data$Y a matrix of size n x Tmax containing the values of the dependent variable Y.
+- data$X an array of size n x Tmax x dimX containing the values of the covariates X.
+- data$Call a vector of size n containing the indexes of the hypothetical clusters for the individuals}
 }
 \value{
-a vector of size nx1 containing the value of the influence function
+a vector of size n x dimX containing the value of the influence
+function of beta w.r.t. each dimension of the covariate (columns), for
+each observation (rows).
 }
 \description{
-Compute the influence function of beta hat: E(d^2ln L/dbeta^2)^{-1}  x (ln L/dbeta)(Yi|Xi,beta).
+Computes the influence function of beta_hat:
+    E(d^2ln L/dbeta^2)^{-1}  x (dln L/dbeta)(Yi|Xi,beta)).
 }

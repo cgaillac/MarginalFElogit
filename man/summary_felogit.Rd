@@ -2,18 +2,19 @@
 % Please edit documentation in R/summary_felogit.R
 \name{summary_felogit}
 \alias{summary_felogit}
-\title{Produce the final summary table for the output of the felogit function}
+\title{Produces the final summary table for the output of the felogit function}
 \usage{
 summary_felogit(output, format = NULL)
 }
 \arguments{
 \item{output}{the output of the felogit function}
 
-\item{format}{can take value "latex" to print the latex table}
+\item{format}{can take value "latex" to print the latex table or "html" to
+print as html}
 }
 \value{
 a kableExtra or xtable table plotted respectively in the R viewer or terminal
 }
 \description{
-Produce the final summary table for the output of the felogit function
+Produces the final summary table for the output of the felogit function
 }

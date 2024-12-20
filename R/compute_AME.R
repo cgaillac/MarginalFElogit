@@ -1,205 +1,127 @@
-#' Function which compute the AME at different values of T according to the selected values of compute_T
+#' Computes the bounds on the AME on the dataset, at all periods given in
+#' compute_T, using the method specified as entry parameter.
 #'
+#' @param data is an environment variable containing the data. If not already
+#' formatted, it will be formatted by the format_data function (see its
+#' documentation for information about the stored variables). It must contain at
+#' least:
+#' - data$Y is a matrix of size n x Tmax containing the values of the dependent variable Y,
+#' - data$X is an array of size n x Tmax x dimX containing the values of the covariates X,
+#' - data$clusterIndexes is a vector of size n x 1 that specifies the cluster each
+#' observation pertains to. If it does not exist, the function enforces the default
+#' setting of i.i.d. observations - the parameter takes value 1:n so that each
+#' observation is its own cluster.
+#' @param estimators (default empty environment) is an environment in which the
+#' results of the CMLE estimation and of the non-parametric estimation of the
+#' conditional distribution of S will be stored. That way, the results will be
+#' saved during the first call of the compute_AME_t function and will not need
+#' to be computed in the subsequent calls. Results are stored as follows:
+#' - estimators$beta_hat, a list which contains the results from CMLE
+#' estimation:
+#' - estimators$beta_hat$beta_hat a vector of length dimX, the
+#' estimated value for the slope parameter.
+#' - estimators_beta_hat$phi_b a matrix of size n x dimX containing
+#' the value of the influence function at each observation (rows) w.r.t.
+#' each dimension of the covariates (columns).
+#' - estimators$beta_hat$var_b the estimated asymptotic covariance
+#' matrix, of size dimX x dimX, for the estimator beta_hat.
+#' - stimators$h_local_lin_proba a vector of length (Tmax + 1) containing,
+#' in j-th position, the bandwidth used to estimate the P(S = j - 1 | X)'s.
+#' - estimators$condlProbas: a matrix of size n x (Tmax + 1) containing,
+#' in position (i, j), the estimate for P(S = j - 1 | X) at the i-th
+#' observation.
+#' - estimators$densityEstimate a matrix of size n x (Tmax + 1) containing,
+#' at each row (individual), the estimated density for having covariates
+#' (X_1, ..., X_T). Each column represents the value found using the
+#' corresponding bandwidths from h.
+#' @param selectX (default NULL) a vector containing the indices of the
+#' covariates w.r.t. which the AME must be computed. If null, the AME w.r.t. all
+#' covariates will be computed. All variables of interest should be given in the
+#' same call, as then there will be no additional cost relative to estimating
+#' w.r.t. only one covariate.
+#' @param compute_T (default "all") is a vector containing all periods at which
+#' the AME must be computed. Alternatively, it can be "all", in which case the
+#' AME will be computed successively at every period and, on top of that, the
+#' average AME across all periods will also be computed using the function
+#' compute_average_AMTE. Also note that non-positive values will be counted
+#' backwards from the last period at which each individual is observed, as in
+#' an event-study.
+#' @param Option (default "quick") Estimation method to be used. If "quick" or
+#' "outer" (case-insensitive) the outer bounds are computed. Otherwise, the sharp
+#' bounds are computed. We recommend using the outer bounds method if the number
+#' of covariates is at least three, if the number of periods observed is four or
+#' more, or if the sample size is small (less than 500) or large (more than 10^4).
+#' @param CIOption (default "CI2") When the outer bounds method is being used,
+#' specifies which confidence interval should be used. If "CI2", the CI2
+#' confidence interval is being used (see DDL, section 4.2), otherwise the CI3
+#' confidence interval will be used (see DDL, appendix C). We recommend using
+#' CI3 only if the user suspects the FE logit model may be a severely
+#' misspecified model for the data.
+#' @param alpha (default 0.05) desired asymptotic level of the estimated
+#' confidence intervals
+#' @param nbCores (default 4) number of cores to be used for parallel computing,
+#' to speed up the estimation of the sharp bounds.
 #'
-#' @param Yall matrix n x T containing the values of the dependent variable Yt
-#' @param Xall array of dimensions n x T x dimX containing the values of the predictors at the different periods.
-#' @param Call matrix n x 1 containing the identifiers of the clusters to which each individual belongs. Default is NULL
-#' @param Option chosen method to compute the AME: either sharp or quick. Default is quick.
-#' @param selectX the vector of selected covariates to compute the AME.
-#' If NULL then bounds are computed for all covariates. NULL by default.
-#' @param compute_T the vector of selected periods to compute the AME.
-#' If NULL, then as described in Section 5.4 of DDL, AME is computed at min supp (T).
-#' If specified to ``all",  the AME is computed at all available periods but the average over the latter is also computed. Default is NULL.
-#' @param alpha  the confidence level for the confidence intervals. Default is 5\%.
-#' @param CIOption the option for the choice of the type of confidence intervals for the quick method, either CI2 or CI3. Default is CI2.
-#' @param g_labels a matrix nx1 containing the individual labels referring to the type of attrition observed and described in the table G_types.
-#' @param G_types a matrix describing the different possible types of attrition observed in the dataset
-#' @param G_indic a matrix nxT containing the individual periods observed (0 if unobserved)
-#' @param nbCores the number of cores used by the program to compute the AME for the ``sharp" method.
-#' @param ratio the ratio R in DDL for the nonparametric estimator of the conditional moments of S
-#'
-#' @return a list of all the outputs of compute_AME_t containing the different results of the estimation of the different values of T considered.
+#' @return a list containing for each entry in compute_T the output of
+#' compute_AME_T specifying the relevant TEstim. If compute_T = "all", we use
+#' compute_T = 1:Tmax and also add an extra entry for the average AME over all
+#' periods. We refer to the documentation of the compute_AME_t and
+#' compute_average_AME functions for a detailed description of the output of
+#' each function.
 #' @export
 #'
 # @examples
-compute_AME<- function(Yall,Xall, Call= NULL, Option  = "quick", selectX = NULL, compute_T = NULL, alpha = 0.05, CIOption = "CI2",
-                           g_labels = NULL , G_types = NULL, G_indic = NULL , nbCores = 4, ratio=10){
-  # compute_T = NULL
-  # selectX = NULL
-  # alpha = 0.05
-  # CIOption = "CI2"
-  # nbCores = 4
-  ## Compute the Tinf = min( Supp(T)) for all individuals
-  Tinf =  apply(Yall,1,isnot)
+compute_AME <- function(data, estimators = env(), selectX = NULL, compute_T = "all", Option  = "quick", CIOption = "CI2", alpha = 0.05, nbCores = 4) {
 
-  ## Max of the Tinf in dataset
-  Tmax = max(Tinf)
+  # Initialisation ----------------------------------------------------------
 
-  ## Get the dimension of X
-  if(length(dim(Xall))==3){
-    dimX = dim(Xall)[3]
-  }else{
-    dimX=1
+  # We create environments to store some variables which are computed in
+  # compute_AME_t and can be used several times, to avoid computing them
+  # several times
+  other_numbers <- env()
+
+  # Format the data
+  format_data(data)
+  Tobsd <- data$Tobsd
+
+  # Interpret the value of compute_T to know which AMEs to compute
+  compute_average <- FALSE
+  if ((length(compute_T) == 1) & (compute_T[1] == "all")) {
+    compute_average <- TRUE
+    compute_T <- 1:(dim(data$X)[2])
+  } else if (is.null(compute_T)) {
+    compute_T <- 1
   }
 
-  ### find the distibution of Tinf in the population and sample size
-  grid_T = NULL
-  n_dist = NULL
-  for(t in 1:Tmax){
-    if(  sum(Tinf==t)>0){
-      grid_T = c(  grid_T , t)
-      n_dist = c( n_dist,sum(Tinf==t))
+  # Compute all requested AMEs ----------------------------------------------
+
+  # We store them in a list with names
+  requested_AME_outputs <- list()
+  names_requested_AME <- c()
+
+  for (i in 1:length(compute_T)) {
+    t <- compute_T[i]
+    if (t <= 0) {
+      # Negative values (whether t is a scalar or a vector) count periods backwards starting from the last observation for each row
+      t <- ifelse(Tobsd + t >= 1, Tobsd + t, NA)
     }
+    requested_AME_outputs[[i]] <- compute_AME_t(data, t, estimators, other_numbers, selectX, Option, CIOption, alpha, nbCores)
   }
-  prop_T = n_dist/sum(n_dist)
+  names_requested_AME <- paste0("T_", compute_T)
 
-  ## number of clusters
-  if(is.null(Call)){
-    Call1 = matrix(1, dim(Yall)[1],1)
-  }else{
-    Call1 =  Call
-  }
-
-  ## compute combinatorial numbers at all possible dates in the dataset.
-  mat_C_k_T= vector("list")
-  cheb_coeff=vector("list")
-  for(t in 1:length(grid_T)){
-    T0 = grid_T[t]
-    M1 = repmat( matrix(seq(0,T0)),1,T0+1) -  repmat(seq(0,T0),T0+1,1)
-    mat_C_k_T[[T0]]  = choose(repmat(T0-(0:T0),T0+1,1), M1)
-    cheb_coeff[[T0]]  = fliplr(t(coeff_Cheb01(T0+1)));
+  # Compute the average if we computed all periods
+  if (compute_average) {
+    requested_AME_outputs[[length(compute_T) + 1]] <- compute_average_AMTE(requested_AME_outputs, data, estimators, selectX, alpha, Option, CIOption)
+    names_requested_AME <- c(names_requested_AME, "average")
   }
 
+  # Name the outputs
+  names(requested_AME_outputs) <- names_requested_AME
 
-  ## consider linear regression est. /4 as starting point
-  options(warn=-1)
-  b_lin = optim(par = rep(0,dimX) , lin_reg ,Y=Yall,X=Xall)$par
-  start_point = b_lin/4
-  options(warn=0)
-
-  # if(dimX==1){
-  #   b_hat = optimize( log_lik_FE_logit,start_bounds,Y=Yall,X=Xall )$minimum
-  # }else{
-
-  ### estimate loglikelihood.
-  # ** insert catching errors ex: delete constant variables, ect..
-  options(warn=-1)
-  b_hat = optim(par = start_point, log_lik_FE_logit,Y=Yall,X=Xall)$par
-  options(warn=0)
-  # }
-
-  # Compute the influence function of beta_hat. Useful for inference on
-  # Delta, at the end.
-  phi_b = infl_func_beta(b_hat,Yall, Xall, Call1);
-  std_b = apply(phi_b,2,std)/sqrt(dim(phi_b)[1])
-
-  ##
-  output = vector("list")
-  append_name <- function(x){return(paste0("T_",x))}
-  ### compute only at last period
-  if( length(compute_T)==0 ){
-    Tall = Tinf
-    output[[1]] <-  compute_AME_t(Yall,Xall, prop_T,
-                                           grid_T,n_dist,Tmax,Tall,Tinf,Call1,mat_C_k_T,
-                                           cheb_coeff,b_hat,alpha, CIOption ,Option,dimX,  selectX, phi_b, std_b , nbCores , ratio)
-
-    names(  output) <- c("Tinf")
-  }else if( length(compute_T)>0 & compute_T[1]!="all"){
-    ## compute for selected periods
-    # t0=1
-    # compute_T= c(2,3)
-    for(t0 in 1:length(compute_T)){
-
-      t_end = compute_T[t0]
-      ## Tall is the T at which the effect is computed, which is different according to the label g (if T is in the list of observed periods)
-      # , g_labels  , G_types, G_indic)
-
-      # find types containing t_end
-      if(!is.null(G_types)){
-        sel_g = G_types[,t_end]==1
-        # discard observations if T not in periods.
-        Tall = matrix(NA,dim( g_labels)[1],1)
-        for(g in 1:length( sel_g)){
-          if( sel_g[g]){
-            Tall[g_labels==g,1]<-t_end
-          }
-        }
-      }else{
-        Tall = pmin(t_end,Tinf)
-        # discard observations if T < t_end
-        Tall[Tall < t_end] <- NA
-      }
-      # cbind( Tall,dataX[,,1])
-      grid_T0 = NULL
-      n_dist0 = NULL
-      for(t in 1:Tmax){
-        if(  sum(Tinf[!is.na(Tall)]==t)>0){
-          grid_T0 = c(  grid_T0 , t)
-          n_dist0 = c( n_dist0,sum(Tinf[!is.na(Tall)]==t))
-        }
-      }
-      prop_T0 = n_dist0/sum(n_dist0)
-
-      # Tall = pmin(t_end,Tinf)
-      # discard observations if T < t_end
-      # Tall[Tall < t_end] <- NA
-
-      # grid_T0 = grid_T =3
-      # grid_T0[grid_T0>t_end] = t_end
-      output[[t0]] <-  compute_AME_t(Yall,Xall, prop_T0,
-                                              grid_T0,n_dist0,Tmax,Tall,Tinf,Call1,mat_C_k_T,
-                                              cheb_coeff,b_hat,alpha, CIOption ,Option,dimX,  selectX , phi_b, std_b , nbCores, ratio)
-
-    }
-    # output$T_2$Delta_hat
-    # output$T_3$Delta_hat
-
-    names(  output) <- apply(matrix(compute_T,length(compute_T),1),1,append_name )
-  }else{
-    ## compute for all periods
-
-    for(t_end in 1:Tmax){
-      # find types containing t_end
-      if(!is.null(G_types)){
-        sel_g = G_types[,t_end]==1
-        # discard observations if T not in periods.
-        Tall = matrix(NA,dim( g_labels)[1],1)
-        for(g in 1:length( sel_g)){
-          if( sel_g[g]){
-            Tall[g_labels==g,1]<-t_end
-          }
-        }
-      }else{
-        Tall = pmin(t_end,Tinf)
-        # discard observations if T < t_end
-        Tall[Tall < t_end] <- NA
-      }
-
-      grid_T0 = NULL
-      n_dist0 = NULL
-      for(t in 1:Tmax){
-        if(  sum(Tinf[!is.na(Tall)]==t)>0){
-          grid_T0 = c(  grid_T0 , t)
-          n_dist0 = c( n_dist0,sum(Tinf[!is.na(Tall)]==t))
-        }
-      }
-      prop_T0 = n_dist0/sum(n_dist0)
-      output[[t_end]] <-  compute_AME_t(Yall,Xall, prop_T0,
-                                                 grid_T0,n_dist0,Tmax,Tall,Tinf,Call1,mat_C_k_T,
-                                                 cheb_coeff,b_hat,alpha, CIOption ,Option,dimX,  selectX, phi_b, std_b  , nbCores, ratio)
-
-    }
-
-    ### add computation of average.
-
-    output[[Tmax+1]]  <- compute_average_AME(output,Option,Tinf,dimX,selectX,CIOption,alpha,g_labels, G_types , G_indic )
-
-    names(  output) <- c(apply(matrix(1:Tmax,length(1:Tmax),1),1,append_name ),"average")
-    ## add name average
-
-
+  # Give proper name to the average bounds
+  if (compute_average) {
+    names(requested_AME_outputs$average)[4] <- "estimatedAMEbounds"
   }
 
-
-  return( output)
+  return(requested_AME_outputs)
 }

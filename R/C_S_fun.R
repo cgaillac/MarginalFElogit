@@ -1,78 +1,48 @@
-#'Computes by induction one of the elementary symm. polynomial on each row
-#'of V1, matrix of size n x T.
+#' Computes the elementary polynomials for each row of the input, by induction. This corresponds
+#' to the what the function C_S does to V in the DDL paper.
 #'
-#'If S1 is scalar, computes the S1-th elem. symm. polynomial
-#'If S1 is a n-column vector, computes, for row i, the S1(i)-th elem. symm.
-#'polynomial.
+#' @param V the matrix of size n x T whose coefficients are
+#'          used in the elementary symmetric polynomial. NAs can be used for
+#'          unobserved values.
 #'
-#' @param S1 the vector of values for the statistic S.
-#' @param V1 the matrix of size n x T which coefficients are
-#'           used in the elementary symm. polynomial.
-#'
-#' @return a vector if S1 is scalar, or a matrix otherwise, containing
-#' the elementary symm. polynomial on each row of V1.
+#' @return a matrix of size n x (T + 1) whose value in the (i, j)-th position
+#' is C_(j-1)(X, beta) using the values of V = X' * beta in the i-th row. When
+#' j - 1 is larger than the number of non-NA values of V in the relevant row, the
+#' value NA is returned.
 #'
 #' @export
 #'
 # @examples
-C_S_fun <- function(S1, V1){
+C_S_fun <- function(V) {
 
-n=dim(V1)[1]
-T = dim(V1)[2]
+  # Initialisation
+  n <- dim(V)[1]
+  Tmax <- dim(V)[2]
 
-if (length(S1)==1){
-  if (S1<0 || S1>T){
-    res=0;
-  }else if(S1==0){
-    res=1;
-  }else if(S1==T){
-    if(dim(V1)[2]>1){
-      res=matrix(apply(V1,1,prod),dim(V1)[1],1)
-    }else{
-      res=V1;
-    }
-  }else{
-    # if(dim(V1)[2]<=2 || n==1){
-    #    if(dim(V1)[2] ==1){
-    #      VT_1 = matrix(0,1)
-    #    }else{
-    #      VT_1 = matrix(V1[,1:(dim(V1)[2]-1)],dim(V1)[1],dim(V1)[2]-1)
-    #    }
-    #     res=V1[,T]*C_S_fun(S1-1,VT_1)+C_S_fun(S1,VT_1);
-    # }else{
-    #   VT_1 = V1[,1:(dim(V1)[2]-1)]
-    #   res=V1[,T]*C_S_fun(S1-1,VT_1)+C_S_fun(S1,VT_1);
-    # }
+  # Note that if there are NAs in V, ignoring them is the same as replacing them
+  # with 0s and computing the overall symmetric polynomial.
+  # So we do this replacement to simplify the code, and remember where the values
+  # of S didn't work
+  wrongS <- repmat(0:Tmax, n, 1) > rowSums(!is.na(V))
+  V[is.na(V)] <- 0
 
-    VT_1 = matrix(V1[,1:(dim(V1)[2]-1)],dim(V1)[1],dim(V1)[2]-1)
-    #VT_1 = V1[,1:(dim(V1)[2]-1)]
-    res=V1[,T]*C_S_fun(S1-1,VT_1)+C_S_fun(S1,VT_1);
+  # We use the recursion formula, where the k-th symmetric polynomial
+  # in V_1, ..., V_n is obtained by multiplying V_n by the (k-1)-th
+  # symmetric polynomial in V_1, ..., V_(n-1) and adding the k-th symmetric
+  # polynomial in V_1, ..., V_(n-1)
+  # Thus we start with the matrix which in the i-th row and j-th column has the
+  # (j-1)-th elementary symmetric polynomial in the empty set, and iterate by getting
+  # (in the i-th row) that for the symmetric polynomials in V[i, 1], ..., V[i, k]
+  # for successive k's.
+  tab_C_S <- matrix(0, nrow = n, ncol = Tmax + 1)
+  tab_C_S[, 1] <- 1
 
+  for (k in 1:Tmax) {
+    tab_C_S[, 2:(k+1)] <- tab_C_S[, 1:k] * V[, k] + tab_C_S[, 2:(k+1)]
   }
-}else{
-  res=zeros(n,1);
-  if(sum(S1==0)!=0){
-    res[S1==0]=1;
-  }
-  if(sum(S1==T)!=0){
-    if(dim(V1)[2]>1){
-      res[S1==T]=apply(matrix(V1[S1==T,],sum(S1==T),dim(V1)[2])   ,1,prod);
-    }else{
-      res[S1==T]=V1[(S1==T),];
-    }
-  }
-  indic = (S1>0 & S1<T)
-  if(sum(indic)>0){
-    VT = matrix(V1[indic,T], sum(indic),1);
-    # if(dim(V1)[2]<=2  || n==1){
-    #   VT_1= matrix(V1[indic,1:(dim(V1)[2]-1)], sum(indic),dim(V1)[2]-1);
-    # }else{
-    #   VT_1= matrix( V1[indic,1:(dim(V1)[2]-1)], sum(indic), (dim(V1)[2]-1) )
-    # }
-    VT_1= matrix( V1[indic,1:(dim(V1)[2]-1)], sum(indic), (dim(V1)[2]-1) )
-    Sind= matrix(S1[indic], sum(indic),1)
-    res[indic]=VT*C_S_fun(Sind-1,VT_1)+C_S_fun(Sind,VT_1);
-  }
-}
-return(res)
+
+  # Put NA where the values of S don't make sense
+  tab_C_S[wrongS] <- NA
+
+  return(tab_C_S)
 }

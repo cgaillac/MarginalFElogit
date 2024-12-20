@@ -2,23 +2,23 @@
 % Please edit documentation in R/C_S_fun.R
 \name{C_S_fun}
 \alias{C_S_fun}
-\title{Computes by induction one of the elementary symm. polynomial on each row
-of V1, matrix of size n x T.}
+\title{Computes the elementary polynomials for each row of the input, by induction. This corresponds
+to the what the function C_S does to V in the DDL paper.}
 \usage{
-C_S_fun(S1, V1)
+C_S_fun(V)
 }
 \arguments{
-\item{S1}{the vector of values for the statistic S.}
-
-\item{V1}{the matrix of size n x T which coefficients are
-used in the elementary symm. polynomial.}
+\item{V}{the matrix of size n x T whose coefficients are
+used in the elementary symmetric polynomial. NAs can be used for
+unobserved values.}
 }
 \value{
-a vector if S1 is scalar, or a matrix otherwise, containing
-the elementary symm. polynomial on each row of V1.
+a matrix of size n x (T + 1) whose value in the (i, j)-th position
+is C_(j-1)(X, beta) using the values of V = X' * beta in the i-th row. When
+j - 1 is larger than the number of non-NA values of V in the relevant row, the
+value NA is returned.
 }
 \description{
-If S1 is scalar, computes the S1-th elem. symm. polynomial
-If S1 is a n-column vector, computes, for row i, the S1(i)-th elem. symm.
-polynomial.
+Computes the elementary polynomials for each row of the input, by induction. This corresponds
+to the what the function C_S does to V in the DDL paper.
 }
